@@ -1,0 +1,19 @@
+\section{Conclusions}
+
+\begin{frame}
+    \begin{itemize}
+        \item Introducing an API gateway that offers a syntactic transformation on the data doesn't add any meaningful overhead
+        \item Dynamically composing related resources saves upto \SI{50}{\percent} in latency
+        \item Upgrading the protocol to TCP sockets saves upto \SI{90}{\percent} of the overhead in real-world latency
+        \item In a real world situation the gateway overhead is irrelevant with added latency of $\leq \SI{2}{\percent}$
+        \item cURL does not reuse TCP connections reliably and caused spikes in the data
+    \end{itemize}
+
+    \emph{Future Work}
+    \begin{itemize}
+        \item Improve geolocation emulation method: use servers in real DCs
+        \item Web socket connection between client-gateway and gateway-microservices
+        \item Measure other efficiency standards other than latency: CPU cycles burnt
+        \item Use a tool other than cURL
+    \end{itemize}
+\end{frame}

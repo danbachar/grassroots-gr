@@ -1,0 +1,15 @@
+\babel@toc {ngerman}{}\relax 
+\babel@toc {english}{}\relax 
+\babel@toc {ngerman}{}\relax 
+\babel@toc {ngerman}{}\relax 
+\babel@toc {english}{}\relax 
+\beamer@sectionintoc {1}{Motivation}{2}{0}{1}
+\beamer@sectionintoc {2}{Background}{3}{0}{2}
+\beamer@sectionintoc {3}{Related Work}{4}{0}{3}
+\beamer@sectionintoc {4}{Objectives}{5}{0}{4}
+\beamer@sectionintoc {5}{Research Questions: Thesis}{6}{0}{5}
+\beamer@sectionintoc {6}{Research Question: Paper}{7}{0}{6}
+\beamer@sectionintoc {7}{Architecture}{8}{0}{7}
+\beamer@sectionintoc {8}{Methodology}{9}{0}{8}
+\beamer@sectionintoc {9}{Vision}{10}{0}{9}
+\beamer@sectionintoc {10}{That's it!}{11}{0}{10}

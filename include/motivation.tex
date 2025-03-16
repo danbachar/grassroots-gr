@@ -1,0 +1,65 @@
+\section{Motivation}
+
+\begin{frame}
+    \begin{itemize}
+        \item Lacking internet infrastructure in disaster zones \pause
+        \item Censorship restricts Self-organized, egalitarian and democratic communication \pause
+        \item Keep schedule for children despite chaos \pause
+        \item Provide a way to communicate with loved ones \pause
+    \end{itemize}
+
+    \begin{figure}
+        \centering
+        \begin{minipage}[t]{0.45\textwidth}
+            \centering
+            \begin{tikzpicture}[remember picture]
+                \node[server] (server) at (0,0) {};
+                \node[client] (client1) at (4,-2) {};
+                \node[client] (client2) at (4,-1) {};
+                \node[client] (client3) at (4,0) {};
+                \node[client] (client4) at (4,1) {};
+                \node[client] (client5) at (4,2) {};
+            
+                \draw[line width=1pt] (server) to (client1);
+                \draw[line width=1pt] (server) to (client2);
+                \draw[line width=1pt] (server) to (client3);
+                \draw[line width=1pt] (server) to (client4);
+                \draw[line width=1pt] (server) to (client5);
+                
+                \node[fit=(server) (client1) (client2) (client3) (client4) (client5), inner sep=5] (derp1) {}; 
+            \end{tikzpicture}
+            \caption{Client-Server}
+        \end{minipage}
+        \hfill
+        \begin{minipage}[t]{0.45\textwidth}
+            \centering
+            \begin{tikzpicture}[remember picture]
+                \node[client] (client1) at (0,0) {};
+                \node[client] (client2) at (2,0) {};
+                \node[client] (client3) at (-1,1) {};
+                \node[client] (client4) at (3,1) {};
+                \node[client] (client5) at (0,2) {};
+                \node[client] (client6) at (2,2) {};
+            
+                \draw[line width=1pt] (client1) to (client2);
+                \draw[line width=1pt] (client1) to (client3);
+                \draw[line width=1pt] (client1) to (client4);
+                \draw[line width=1pt] (client1) to (client5);
+                \draw[line width=1pt] (client1) to (client6);
+                \draw[line width=1pt] (client2) to (client3);
+                \draw[line width=1pt] (client2) to (client4);
+                \draw[line width=1pt] (client2) to (client5);
+                \draw[line width=1pt] (client2) to (client6);
+                \draw[line width=1pt] (client3) to (client4);
+                \draw[line width=1pt] (client3) to (client5);
+                \draw[line width=1pt] (client3) to (client6);
+                \draw[line width=1pt] (client4) to (client5);
+                \draw[line width=1pt] (client4) to (client6);
+                \draw[line width=1pt] (client5) to (client6);
+                
+                \node[fit=(client1) (client2) (client3) (client4) (client5) (client6), inner sep=5] (derp1) {}; 
+            \end{tikzpicture}
+            \caption{Distributed Grassroots Network}
+        \end{minipage}
+    \end{figure}
+ \end{frame}
