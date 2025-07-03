@@ -2,7 +2,7 @@
 Scenario.name = ErdosRenyiScenario
 Scenario.simulateConnections = true
 Scenario.updateInterval = 1
-Scenario.endTime = 44000
+Scenario.endTime = 3600
 
 # Reports
 Report.nrofReports = 4
