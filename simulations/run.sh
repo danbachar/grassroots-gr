@@ -5,8 +5,24 @@ set -e
 DEFAULT_MAX_PARALLEL_JOBS=1
 DEFAULT_NUM_RUNS=50
 DEFAULT_SIZES=(100 1000 10000 100000 1000000 5000000)
-DEFAULT_SCENARIO_NAME="ER"  # $SCENARIO_NAME
+DEFAULT_SCENARIO_NAME="erdos-renyi"
 DEFAULT_TOTAL_HOSTS=50
+
+print_usage() {
+    echo "Usage: $0 [OPTIONS]"
+    echo "Options:"
+    echo "  -j, --jobs NUM       Maximum number of parallel jobs (default: $DEFAULT_MAX_PARALLEL_JOBS)"
+    echo "  -r, --runs NUM       Number of runs per size (default: $DEFAULT_NUM_RUNS)"
+    echo "  -s, --sizes SIZE...  Space-separated list of message sizes (default: ${DEFAULT_SIZES[*]})"
+    echo "  -n, --name STRING    Name of the scenario to use (default: \"$DEFAULT_SCENARIO_NAME\")"
+    echo "  -t, --total-hosts NUM Total number of nodes in the simulation (default: $DEFAULT_TOTAL_HOSTS)"
+    echo "  -h, --help           Show this help message"
+    echo ""
+    echo "This script generates random stationary nodes for simulations."
+    echo ""
+    echo "Example:"
+    echo "  $0 --name erdos-renyi --jobs 32 --runs 25 --sizes 100 1000 10000 --total-hosts 50"
+}
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -19,8 +35,12 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -s|--sizes)
-            SIZES="$2"
-            shift 2
+            SIZES=()
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                SIZES+=("$1")
+                shift
+            done
             ;;
         -n|--name)
             SCENARIO_NAME="$2"
@@ -44,7 +64,9 @@ done
 
 MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-$DEFAULT_MAX_PARALLEL_JOBS}
 NUM_RUNS=${NUM_RUNS:-$DEFAULT_NUM_RUNS}
-SIZES=("${SIZES[@]:-${DEFAULT_SIZES[@]}}")
+if [ ${#SIZES[@]} -eq 0 ]; then
+    SIZES=("${DEFAULT_SIZES[@]}")
+fi
 SCENARIO_NAME=${SCENARIO_NAME:-$DEFAULT_SCENARIO_NAME}
 TOTAL_HOSTS=${TOTAL_HOSTS:-$DEFAULT_TOTAL_HOSTS}
 TOTAL_NUMBER_HOSTS=$TOTAL_HOSTS
@@ -54,22 +76,6 @@ echo "  Number of runs: $NUM_RUNS"
 echo "  Total number of hosts: $TOTAL_NUMBER_HOSTS"
 echo "  Message sizes: [$(IFS=', '; echo "${SIZES[*]}")]"
 echo "  Scenario name: $SCENARIO_NAME"
-
-print_usage() {
-    echo "Usage: $0 [OPTIONS]"
-    echo "Options:"
-    echo "  -j, --jobs NUM       Maximum number of parallel jobs (default: $DEFAULT_MAX_PARALLEL_JOBS)"
-    echo "  -r, --runs NUM       Number of runs per size (default: $DEFAULT_NUM_RUNS)"
-    echo "  -s, --sizes \"LIST\" Space-separated list of message sizes (default: \"$DEFAULT_SIZES\")"
-    echo "  -n, --name STRING    Name of the scenario to use (default: \"$DEFAULT_SCENARIO_NAME\")"
-    echo "  -t, --total-hosts NUM Total number of nodes in the simulation (default: $DEFAULT_TOTAL_HOSTS)"
-    echo "  -h, --help           Show this help message"
-    echo ""
-    echo "This script generates random stationary nodes for simulations."
-    echo ""
-    echo "Example:"
-    echo "  $0 --name ER --jobs 16 --runs 50 --sizes \"100 1000 10000\" --total-hosts 100"
-}
 
 compile() {
     cd the-one
@@ -91,7 +97,7 @@ run_simulation() {
         the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}.txt"
 
     cd the-one
-    ./one.sh \
+    ./one.sh -b 1 \
         "$SCENARIO_NAME-settings-${size}-${run}.txt" \
         "$SCENARIO_NAME-comms-settings-${size}.txt"
     cd -
@@ -111,9 +117,10 @@ wait_for_jobs() {
 
 prepare_config_files() {
     echo "Preparing configuration files..."
-    sed -i '' -e "s/Events1.hosts = .*/Events1.hosts = 1,$TOTAL_NUMBER_HOSTS/" \
-        -e "s/Events1.toHosts = .*/Events1.toHosts = 1,$TOTAL_NUMBER_HOSTS/" \
+    sed -i -e "s/Events1.hosts = .*/Events1.hosts = 1,$TOTAL_NUMBER_HOSTS/" \
                 the-one/$SCENARIO_NAME-comms-settings.txt
+    sed -i -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_NUMBER_HOSTS/" \
+                the-one/$SCENARIO_NAME-settings.txt
     for size in "${SIZES[@]}"; do
         sed -e "s/Events1.size = .*/Events1.size = $size/" \
                 the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-${size}.txt"
