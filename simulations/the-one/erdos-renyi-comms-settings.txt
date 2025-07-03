@@ -1,0 +1,20 @@
+## Interface-specific settings:
+# "Bluetooth" interface for all nodes
+bluetoothInterface.type = BluetoothInterface
+bluetoothInterface.transmitRange = 120
+bluetoothInterface.transmitSpeed = 0 # Dummy setting required for simulator to properly work
+bluetoothInterface.maximumParallelConnections = 1000
+bluetoothInterface.churnRate = 0
+
+SprayAndWaitRouter.nrofCopies = 8
+SprayAndWaitRouter.binaryMode = true
+
+# Message related settings
+Events.nrof = 1
+Events1.class = ActiveHostMessageGenerator
+Events1.interval = 1
+Events1.size = 100
+Events1.hosts = 1,10
+Events1.toHosts = 1,10
+Events1.prefix = M
+Events1.createResponses = false

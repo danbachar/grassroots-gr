@@ -1,1 +1,9 @@
 build/**/*
+simulations/the-one/reports_data
+simulations/the-one/out
+simulations/the-one/target
+simulations/**/__pycache__
+simulations/**/.idea
+simulations/**/.vscode
+simulations/out
+simulations/the-one/reports
