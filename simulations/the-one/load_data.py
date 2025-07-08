@@ -386,18 +386,19 @@ def combine_message_data(scenario_prefix, size_suffixes, num_runs=100) -> list[M
     return messages
 
 def main():
-    scenario_prefix = "CMB"
-    
     DEFAULT_SIZE_SUFFIXES = ["100","1000","10000","100000","1000000","5000000"]
-    DEFUALT_NUM_RUNS = 50
+    DEFAULT_NUM_RUNS = 50
+    DEFAULT_SCENARIO_NAME = "ER"
 
-    parser = ArgumentParser(description="Combine reports generated from The ONE for assignment 1")
+    parser = ArgumentParser(description="Combine reports generated from The ONE")
     parser.add_argument("--sizes", nargs="+", default=DEFAULT_SIZE_SUFFIXES, help="List of message sizes to process. Default is " + str(DEFAULT_SIZE_SUFFIXES))
-    parser.add_argument("--runs", type=int, default=DEFUALT_NUM_RUNS, help="Number of runs to process for each size. Default is " + str(DEFUALT_NUM_RUNS))
+    parser.add_argument("--runs", type=int, default=DEFAULT_NUM_RUNS, help="Number of runs to process for each size. Default is " + str(DEFAULT_NUM_RUNS))
+    parser.add_argument("--scenario-name", type=str, default="ER", help="Scenario name to process for the reports " + str(DEFAULT_SCENARIO_NAME))
 
     args = parser.parse_args()
     sizes = args.sizes
     runs = args.runs
+    scenario_prefix = args.scenario_name
 
     print(f"Received sizes {sizes}, and runs {runs}")
 

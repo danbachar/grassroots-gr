@@ -4,11 +4,8 @@ from matplotlib import ticker
 import matplotlib.pyplot as plt
 import pickle
 from load_data import Message, Hop # Hop is needed, otherwise the pickle load won't work
-iting this code
 
-class Message:
-    """
-    Messag, especially in plotting. 
+# Disclaimer: Claude 4.0 helped writing this code, especially in plotting. 
 # Data processing and loading was done by us
 
 def plot_hop_counts(df):
@@ -326,7 +323,8 @@ def plot_node_degree_vs_latency(messages):
     plt.tight_layout()
     plt.savefig(f'figures/node_degree_vs_hoplatency_aggregate.png',
                 bbox_inches='tight', dpi=300)
-    plt.close()(
+    plt.close()
+
 def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outliers=True):
     """Plot bitrate vs distance aggregated across all message sizes using robust statistics"""
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -433,17 +431,21 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
     plt.savefig('figures/bitrate_vs_distance_aggregate.png', 
                 bbox_inches='tight', dpi=300)
     plt.close()
-):
-    """Main function to generate all plots"""
-    sc0"messages = pickle.load(f)
+
+def plot_data_quality_analysis(messages: list[Message]):
+    data = {
+        'Distance': [msg.distance for msg in messages],
+        'Size': [msg.size for msg in messages],
+        'Hop_Count': [len(msg.hops) for msg in messages],
+        'Latency': [msg.delivery_time for msg in messages]
+    }
+    df = pd.DataFrame(data)
     
-        print("Analyzing datmessages
-        plot_data_quality_analysis(messmessages_prefix, size_suffixes)
-    
-    # print("Generatimessagesa, print("Generating comprehensive correlation heatmmessagesplot_comprehensive_correlation_heatmap(me    # plot_hop_counts(df)
-    # plot_distance_vs_hopcount_by_size(df)
-    plot_latency_frequency_by_size(messages)     # plot_node_degree_vs_latency(messages)
-    # plot_bitrate_vs_distance(messages)
+    plot_hop_counts(df)
+    plot_distance_vs_hopcount_by_size(df)
+    plot_latency_frequency_by_size(messages)
+    plot_node_degree_vs_latency(messages)
+    plot_bitrate_vs_distance(messages)
 
 def plot_correlation_heatmap(messages: list[Message]):
     data = []
@@ -492,7 +494,19 @@ def plot_correlation_heatmap(messages: list[Message]):
     plt.tight_layout()
     plt.savefig(f'figures/correlation_heatmap.png', bbox_inches='tight', dpi=300)
     plt.close()
-narioscenario
-        
-        #     Filter messages with sinvalid data: size  0, distance 0, or delivery_time # # # 
-    # 
+
+def main():
+    with open("message.pkl", 'rb') as f:
+        messages = pickle.load(f)
+
+    # Filter messages with invalid data
+    messages = [msg for msg in messages if msg.size > 0 and msg.distance > 0 and msg.delivery_time > 0]
+    
+    plot_data_quality_analysis(messages)
+
+    plot_correlation_heatmap(messages)
+    
+    print("All plots generated successfully!")
+
+if __name__ == "__main__":
+    main()
