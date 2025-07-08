@@ -4,33 +4,30 @@
  */
 package movement;
 
-import core.Coord;
-import core.DTNSim;
-import core.Settings;
+import core.*;
 import util.Room;
 
-import java.util.Arrays;
-import java.util.List;
-
 /**
- * A movement model where nodes are placed randomly within a polygon area
- * and remain stationary throughout the simulation.
+ * A movement model where nodes are placed randomly within a polygon area and
+ * remain stationary throughout the simulation.
  */
 public class RandomStationaryConstrained extends MovementModel {
+
     public static final String OFFSET_X_S = "offsetX";
     public static final String OFFSET_Y_S = "offsetY";
 
     public final int xOffset;
     public final int yOffset;
 
-    private final Coord location;
+    private Coord location;
     private final double height;
     private final double width;
+    private final Room constrainedRoom;
 
     /**
      * Reads the interface settings from the Settings file
      */
-    public RandomStationaryConstrained(Settings s)	{
+    public RandomStationaryConstrained(Settings s) {
         super(s);
 
         this.xOffset = s.getInt(OFFSET_X_S);
@@ -39,6 +36,7 @@ public class RandomStationaryConstrained extends MovementModel {
         // get random room to spawn in
         int randomIndex = rng.nextInt(DTNSim.allRooms.size());
         Room room = DTNSim.allRooms.get(randomIndex);
+        this.constrainedRoom = room;
         var polygonCoords = room.getPolygon();
 
         var maxXPolygonCoordinate = polygonCoords.stream().mapToDouble(Coord::getX).max().getAsDouble();
@@ -48,8 +46,6 @@ public class RandomStationaryConstrained extends MovementModel {
         var maxYPolygonCoordinate = polygonCoords.stream().mapToDouble(Coord::getY).max().getAsDouble();
         var minYPolygonCoordinate = polygonCoords.stream().mapToDouble(Coord::getY).min().getAsDouble();
         this.height = maxYPolygonCoordinate - minYPolygonCoordinate;
-
-        this.location = generateRandomLocation(room, width, height);
     }
 
     protected RandomStationaryConstrained(RandomStationaryConstrained rsc) {
@@ -61,6 +57,8 @@ public class RandomStationaryConstrained extends MovementModel {
         // get random room to spawn in
         int randomIndex = rng.nextInt(DTNSim.allRooms.size());
         Room room = DTNSim.allRooms.get(randomIndex);
+        this.constrainedRoom = room;
+        
         var polygonCoords = room.getPolygon();
 
         var maxXPolygonCoordinate = polygonCoords.stream().mapToDouble(Coord::getX).max().getAsDouble();
@@ -70,8 +68,6 @@ public class RandomStationaryConstrained extends MovementModel {
         var maxYPolygonCoordinate = polygonCoords.stream().mapToDouble(Coord::getY).max().getAsDouble();
         var minYPolygonCoordinate = polygonCoords.stream().mapToDouble(Coord::getY).min().getAsDouble();
         this.height = maxYPolygonCoordinate - minYPolygonCoordinate;
-
-        this.location = generateRandomLocation(room, width, height);
     }
 
     @Override
@@ -79,38 +75,44 @@ public class RandomStationaryConstrained extends MovementModel {
         return new RandomStationaryConstrained(this);
     }
 
-
     /**
      * Generates a random coordinate within the specified rectangle
+     *
      * @return Random coordinate within the rectangle
      */
-    private Coord generateRandomLocation(Room room, double width, double height) {
+    private Coord generateRandomLocation() {
         assert rng != null : "MovementModel not initialized!";
 
-        Coord location;
+        Coord randomLocation;
         boolean inRoom;
-
         do {
-            double x = this.xOffset + rng.nextDouble() * width;
-            double y = this.yOffset + rng.nextDouble() * height;
-            location = new Coord(x, y);
-            inRoom = room.isCoordinateInRoom(location);
+            double x = this.xOffset + rng.nextDouble() * this.width;
+            double y = this.yOffset + rng.nextDouble() * this.height;
+            randomLocation = new Coord(x, y);
+            inRoom = this.constrainedRoom.isCoordinateInRoom(randomLocation);
         } while (!inRoom);
 
-        return location;
+        return randomLocation;
     }
 
     /**
      * Returns the randomly generated initial location
+     *
      * @return the initial location of this node
      */
     @Override
     public Coord getInitialLocation() {
-        return location;
+        if (this.location == null) {
+            // generate random location if not already set
+            this.location = generateRandomLocation();
+        }
+
+        return this.location;
     }
 
     /**
      * Returns a single coordinate path (node stays at its initial location)
+     *
      * @return a single coordinate path
      */
     @Override
