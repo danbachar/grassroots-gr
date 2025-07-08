@@ -91,19 +91,12 @@ run_simulation() {
     local job_id="${size}_${run}"
     
     echo "[$(date '+%H:%M:%S')] Starting simulation ${job_id}"
-    
-    # Create temporary config file with unique scenario name for each run
-    sed -e "s/Scenario.name = .*/Scenario.name = ER_${size}_run${run}/" \
-        the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}.txt"
 
     cd the-one
     ./one.sh -b 1 \
         "$SCENARIO_NAME-settings-${size}-${run}.txt" \
         "$SCENARIO_NAME-comms-settings-${size}.txt"
     cd -
-    
-    # Clean up temporary config file
-    rm -f "the-one/$SCENARIO_NAME-settings-${size}-${run}.txt"
     
     echo "[$(date '+%H:%M:%S')] Completed simulation ${job_id}"
 }
@@ -117,11 +110,18 @@ wait_for_jobs() {
 
 prepare_config_files() {
     echo "Preparing configuration files..."
+
     sed -i -e "s/Events1.hosts = .*/Events1.hosts = 1,$TOTAL_NUMBER_HOSTS/" \
                 the-one/$SCENARIO_NAME-comms-settings.txt
     sed -i -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_NUMBER_HOSTS/" \
                 the-one/$SCENARIO_NAME-settings.txt
     for size in "${SIZES[@]}"; do
+        for run in $(seq 1 $NUM_RUNS); do
+            RANDOM_SEED=$((size+run))
+            sed -e "s/Scenario.name = .*/Scenario.name = ER_${size}_run${run}/" \
+                -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
+                the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}.txt"
+        done
         sed -e "s/Events1.size = .*/Events1.size = $size/" \
                 the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-${size}.txt"
     done
@@ -166,6 +166,6 @@ run_simulations() {
     echo "The resulting reports data can be found under the the-one/reports_data/ directory"
 }
 
-compile
+#compile
 prepare_config_files
-run_simulations
+#run_simulations
