@@ -149,75 +149,70 @@ def plot_latency_frequency_by_size(messages):
     sizes = np.unique([msg.size for msg in messages])
     colors = plt.cm.tab10(np.linspace(0, 1, len(sizes)))
     
-    # Define specific percentiles
-    special_percentiles = [50, 99.9, 99.99, 99.999, 99.9999]  # Removed highest percentile
+    special_percentiles = [50, 99.9, 99.99, 99.999, 99.9999]
+    plotting_percentiles = [0] + special_percentiles
     percentile_stats = {}
+    
+    tick_positions = np.arange(len(special_percentiles))
+    all_positions = np.arange(-1, len(special_percentiles))
     
     for i, size in enumerate(sizes):
         messages_for_size = list(filter(lambda msg, s_inner=int(size): 
                                       msg.size == s_inner and msg.delivery_time > 0, 
                                       messages))
         
-        if not messages_for_size:
-            continue
-            
         latencies = sorted([msg.delivery_time for msg in messages_for_size])
         percentiles = np.arange(1, len(latencies) + 1) / len(latencies) * 100
         
-        # Smooth the curve using interpolation
-        interp_percentiles = np.linspace(min(percentiles), max(percentiles), 1000)
-        interp_latencies = np.interp(interp_percentiles, percentiles, latencies)
+        plot_positions = []
+        plot_latencies = []
         
-        # Plot smoothed distribution
-        ax.plot(interp_latencies, interp_percentiles, 
+        for j, p in enumerate(plotting_percentiles):
+            if p == 0:
+                # 0th percentile is the minimum latency
+                latency_at_percentile = latencies[0]
+                position = all_positions[j]  # -1
+            else:
+                latency_at_percentile = np.interp(p, percentiles, latencies)
+                position = all_positions[j]
+                
+            plot_positions.append(position)
+            plot_latencies.append(latency_at_percentile)
+        
+        ax.plot(plot_positions, plot_latencies, 
                 label=f'{size} bytes', 
                 color=colors[i],
-                linewidth=2.5)
+                linewidth=2.5,
+                marker='o',
+                markersize=4)
         
-        # Store percentile values
         percentile_stats[size] = {
             p: np.interp(p, percentiles, latencies) 
             for p in special_percentiles
         }
 
-    # Set logarithmic scales
-    ax.set_xscale('log')
-    ax.set_yscale('log')
     
-    # Set y-axis limits to show all percentiles with more space
-    ax.set_ylim(40, 100)
+    # Set x-axis limits to show from 0% position to highest percentile with margin
+    ax.set_xlim(-1.2, len(special_percentiles) - 0.5)
     
-    # Create custom tick positions and labels
-    yticks = special_percentiles
-    yticklabels = ['50%', '99.9%', '99.99%', '99.999%', '99.9999%']
+    xticks = tick_positions 
+    xticklabels = ['50%', '99.9%', '99.99%', '99.999%', '99.9999%']
     
-    ax.set_yticks(yticks)
-    ax.set_yticklabels(yticklabels)
-    
-    # Adjust label positions to prevent overlap
-    ax.tick_params(axis='y', which='major', pad=20)  # Increase spacing between ticks and labels
-    
-    # Customize grid
-    ax.grid(True, which="major", ls="-", alpha=0.4)
-    ax.grid(True, which="minor", ls=":", alpha=0.2)
-    
-    # Improve tick labels
-    ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
-    
-    # Customize appearance
-    ax.set_xlabel('Latency (seconds)', fontsize=12)
-    ax.set_ylabel('Percentile (%)', fontsize=12)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)    
+    ax.set_xlabel('Percentile (%)', fontsize=12)
+    ax.set_ylabel('Latency (seconds)', fontsize=12)
     ax.set_title('Latency Percentile Distribution', fontsize=14, pad=20)
     
     # Improve legend
-    ax.legend(loc='lower right', 
+    ax.legend(loc='upper left', 
              fontsize=10, 
              framealpha=0.9,
              title='Message Sizes')
     
     # Adjust layout with more space for labels
     plt.subplots_adjust(left=0.15)  # Increase left margin
-    plt.savefig(f'figures/latency_percentiles_smooth.png',
+    plt.savefig(f'figures/latency_percentiles.png',
                 bbox_inches='tight', dpi=300)
     plt.close()
 
