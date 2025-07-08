@@ -89,13 +89,12 @@ def get_host_id_from_host_name(node_name: str) -> str:
     """
     Extract host ID from host name.
     Args:
-        node_name: Host name in format 'lecturetaker_{groupid}_{hostid}' or 'selfstudier_{hostid}'
+        node_name: Host name in format 'random_stationary_{hostid}'
     Returns:
         Host ID as a string
     """
-    is_lecture_taker = node_name.startswith('lecturetaker')
     splitted = node_name.split("_")
-    return splitted[2] if is_lecture_taker else splitted[1]
+    return splitted[2]
 
 def load_distance_delay_data(file_path) -> list[Message]:
     """
