@@ -3,6 +3,7 @@ package core;
 import routing.MessageRouter;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -14,7 +15,7 @@ public class LimitedMTUConnection extends Connection {
 	private int currentspeed = 0;
 	private double lastUpdate = 0;
 	private static final int PATH_MTU = 247; // BLE 4.2+ MTU
-	private final List<MessageChunk> chunks;
+	private final HashMap<String, MessageChunk> chunks;
 	/**
 	 * Creates a new connection between nodes and sets the connection
 	 * state to "up".
@@ -27,7 +28,7 @@ public class LimitedMTUConnection extends Connection {
 		   DTNHost toNode, NetworkInterface toInterface) {
 	    super(fromNode, fromInterface, toNode, toInterface);
 		this.msgsent = 0;
-		this.chunks = new ArrayList<>();
+		this.chunks = new HashMap<>();
 	}
 
 	/**
@@ -58,8 +59,10 @@ public class LimitedMTUConnection extends Connection {
 			var numberOfChunks = messageSize / PATH_MTU;
 			for (int i = 0; i < numberOfChunks + (hasRest ? 1 : 0); i++) {
 				int chunkSize = i == numberOfChunks ? rest : PATH_MTU;
-				MessageChunk chunk = new MessageChunk(newMessage, chunkSize);
-				this.chunks.add(chunk);
+				MessageChunk chunk = new MessageChunk(newMessage, chunkSize, i);
+
+				String id = this.getChunkID(newMessage.getId(), i);
+				this.chunks.put(id, chunk);
 			}
 
 			this.msgsize = messageSize;
@@ -84,14 +87,17 @@ public class LimitedMTUConnection extends Connection {
 		}
 		var theoreticalNumberOfSendableBytesSinceLastUpdate = currentspeed * (now - this.lastUpdate);
 		var total = 0;
-		List<MessageChunk> chunksTaken = new ArrayList<>();
-		for (var chunk: this.chunks) {
+		List<String> chunksTaken = new ArrayList<>();
+		for (var chunkID: this.chunks.keySet()) {
+			var chunk = this.chunks.get(chunkID);
 			if (total + chunk.chunkSize < theoreticalNumberOfSendableBytesSinceLastUpdate) {
 				total += chunk.chunkSize;
-				chunksTaken.add(chunk);
+				chunksTaken.add(chunkID);
 			}
 		}
-		this.chunks.removeAll(chunksTaken);
+		for (var chunkID: chunksTaken) {
+			this.chunks.remove(chunkID);
+		}
 		this.msgsent += total;
 		this.lastUpdate = now;
 	}
@@ -120,6 +126,10 @@ public class LimitedMTUConnection extends Connection {
 	 */
 	public boolean isMessageTransferred() {
         return this.msgsent >= this.msgsize;
+	}
+
+	private String getChunkID(String messageID, int chunkIndex) {
+		return messageID + "_" + chunkIndex;
 	}
 
 }

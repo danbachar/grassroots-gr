@@ -4,12 +4,6 @@
  */
 package core;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 /**
  * A chunk of a message that is created at a node or passed between nodes.
  */
@@ -18,6 +12,7 @@ public class MessageChunk {
 	public final Message originalMessage;
 	public final double timeCreated;
 	private double timeReceived;
+	private final int chunkIndex;
 
 	static {
 		reset();
@@ -29,11 +24,12 @@ public class MessageChunk {
 	 * @param m the original message
 	 * @param size chunk size
 	 */
-	public MessageChunk(Message m, int size) {
+	public MessageChunk(Message m, int size, int chunkIndex) {
 		this.originalMessage = m;
 		this.chunkSize = size;
 		this.timeCreated = SimClock.getTime();
 		this.timeReceived = -1;
+		this.chunkIndex = chunkIndex;
 	}
 
 	/**
@@ -52,6 +48,9 @@ public class MessageChunk {
 		return this.timeReceived;
 	}
 
+	public int getChunkIndex() {
+		return this.chunkIndex;
+	}
 	/**
 	 * Resets all static fields to default values
 	 */
