@@ -2,7 +2,7 @@
 Scenario.name = ErdosRenyiScenario
 Scenario.simulateConnections = true
 Scenario.updateInterval = 1
-Scenario.endTime = 3600
+Scenario.endTime = 7200
 
 # Reports
 Report.nrofReports = 4
@@ -23,7 +23,7 @@ Scenario.nrofHostGroups = 1
 
 # Random stationary nodes for Erdos-Renyi simulation
 Group1.groupID = random_stationary_
-Group1.nrofHosts = 10
+Group1.nrofHosts = 50
 Group1.movementModel = RandomStationaryConstrained
 Group1.offsetX = 50
 Group1.offsetY = 50
