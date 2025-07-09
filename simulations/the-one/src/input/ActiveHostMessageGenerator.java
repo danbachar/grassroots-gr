@@ -91,12 +91,12 @@ public class ActiveHostMessageGenerator
       isActive = host.isMovementActive();
 
       if (isActive) {
-        var otherActiveHostsInRange = hosts.parallelStream().filter(h -> h.getAddress() != finalHostID && h.isMovementActive() && h.getLocation().distance(host.getLocation()) < this.maxDistance).toList();
-        hasHostInAvailableBins = otherActiveHostsInRange
-          .stream()
-          .anyMatch(h -> {
-            int distance = (int)Math.round(host.getLocation().distance(h.getLocation()));
-            int indexInBin = Math.floorDiv(distance, this.binSize);
+        hasHostInAvailableBins = hosts
+          .parallelStream()
+          .filter(h -> h.getAddress() != finalHostID && h.isMovementActive() && h.getLocation().distance(host.getLocation()) < this.maxDistance)
+          .anyMatch(predicate -> {
+            int distance = (int)Math.round(host.getLocation().distance(predicate.getLocation()));
+            int indexInBin = Math.min(Math.floorDiv(distance, this.binSize), distanceBins.length - 1);
             return distanceBins[indexInBin] < this.countPerDistance;
           });
       }
@@ -126,7 +126,7 @@ public class ActiveHostMessageGenerator
       isActive = toHost.isMovementActive();
 
       int distance = (int)Math.round(fromHost.getLocation().distance(toHost.getLocation()));
-      indexInBin = Math.floorDiv(distance, this.binSize);
+      indexInBin = Math.min(Math.floorDiv(distance, this.binSize), distanceBins.length - 1);
       binNeedsMore = distanceBins[indexInBin] < this.countPerDistance;
     } while (!isActive && !binNeedsMore);
 

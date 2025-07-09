@@ -69,11 +69,10 @@ if [ ${#SIZES[@]} -eq 0 ]; then
 fi
 SCENARIO_NAME=${SCENARIO_NAME:-$DEFAULT_SCENARIO_NAME}
 TOTAL_HOSTS=${TOTAL_HOSTS:-$DEFAULT_TOTAL_HOSTS}
-TOTAL_NUMBER_HOSTS=$TOTAL_HOSTS
 echo "Configuration:"
 echo "  Maximum parallel jobs: $MAX_PARALLEL_JOBS"
 echo "  Number of runs: $NUM_RUNS"
-echo "  Total number of hosts: $TOTAL_NUMBER_HOSTS"
+echo "  Total number of hosts: $TOTAL_HOSTS"
 echo "  Message sizes: [$(IFS=', '; echo "${SIZES[*]}")]"
 echo "  Scenario name: $SCENARIO_NAME"
 
@@ -111,9 +110,10 @@ wait_for_jobs() {
 prepare_config_files() {
     echo "Preparing configuration files..."
 
-    sed -i -e "s/Events1.hosts = .*/Events1.hosts = 1,$TOTAL_NUMBER_HOSTS/" \
+    sed -i -e "s/Events1.hosts = .*/Events1.hosts = 0,$TOTAL_HOSTS/" \
+            -e "s/Events1.toHosts = .*/Events1.toHosts = 0,$TOTAL_HOSTS/" \
                 the-one/$SCENARIO_NAME-comms-settings.txt
-    sed -i -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_NUMBER_HOSTS/" \
+    sed -i -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_HOSTS/" \
                 the-one/$SCENARIO_NAME-settings.txt
     for size in "${SIZES[@]}"; do
         for run in $(seq 1 $NUM_RUNS); do
@@ -126,7 +126,7 @@ prepare_config_files() {
                 the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-${size}.txt"
     done
 
-    python room/main.py --hosts $TOTAL_NUMBER_HOSTS --name hall --x_offset 50 --y_offset 50
+    python room/main.py --hosts $TOTAL_HOSTS --name hall --x_offset 50 --y_offset 50
 }
 
 run_simulations() {
@@ -166,6 +166,6 @@ run_simulations() {
     echo "The resulting reports data can be found under the the-one/reports_data/ directory"
 }
 
-#compile
+compile
 prepare_config_files
-#run_simulations
+run_simulations
