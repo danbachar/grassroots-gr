@@ -2,10 +2,6 @@ package core;
 
 import routing.MessageRouter;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-
 /**
  * A PDU-limited connection between two DTN nodes. If messages are larger than the PDU, they will be chunked
  */
@@ -15,7 +11,8 @@ public class LimitedMTUConnection extends Connection {
 	private int currentspeed = 0;
 	private double lastUpdate = 0;
 	private static final int PATH_MTU = 247; // BLE 4.2+ MTU
-	private final HashMap<String, MessageChunk> chunks;
+	private int fullSizeChunkCount;
+	private int lastChunkSize;
 	/**
 	 * Creates a new connection between nodes and sets the connection
 	 * state to "up".
@@ -28,7 +25,6 @@ public class LimitedMTUConnection extends Connection {
 		   DTNHost toNode, NetworkInterface toInterface) {
 	    super(fromNode, fromInterface, toNode, toInterface);
 		this.msgsent = 0;
-		this.chunks = new HashMap<>();
 	}
 
 	/**
@@ -42,6 +38,7 @@ public class LimitedMTUConnection extends Connection {
 	 * @return The value returned by
 	 * {@link MessageRouter#receiveMessage(Message, DTNHost)}
 	 */
+	@Override
 	public int startTransfer(DTNHost from, Message m) {
 		assert this.msgOnFly == null : "Already transferring " +
 			this.msgOnFly + " from " + this.msgFromNode + " to " +
@@ -59,10 +56,11 @@ public class LimitedMTUConnection extends Connection {
 			var numberOfChunks = messageSize / PATH_MTU;
 			for (int i = 0; i < numberOfChunks + (hasRest ? 1 : 0); i++) {
 				int chunkSize = i == numberOfChunks ? rest : PATH_MTU;
-				MessageChunk chunk = new MessageChunk(newMessage, chunkSize, i);
-
-				String id = this.getChunkID(newMessage.getId(), i);
-				this.chunks.put(id, chunk);
+				if (chunkSize == PATH_MTU) {
+					this.fullSizeChunkCount++;
+				} else {
+					this.lastChunkSize = chunkSize;
+				}
 			}
 
 			this.msgsize = messageSize;
@@ -77,6 +75,7 @@ public class LimitedMTUConnection extends Connection {
 	 * given by the interfaces, and calculate the missing data amount.
 	 *
 	 */
+	@Override
 	public void update() {
 		double now = core.SimClock.getTime();
 		currentspeed =  this.fromInterface.getTransmitSpeed(toInterface);
@@ -87,17 +86,19 @@ public class LimitedMTUConnection extends Connection {
 		}
 		var theoreticalNumberOfSendableBytesSinceLastUpdate = currentspeed * (now - this.lastUpdate);
 		var total = 0;
-		List<String> chunksTaken = new ArrayList<>();
-		for (var chunkID: this.chunks.keySet()) {
-			var chunk = this.chunks.get(chunkID);
-			if (total + chunk.chunkSize < theoreticalNumberOfSendableBytesSinceLastUpdate) {
-				total += chunk.chunkSize;
-				chunksTaken.add(chunkID);
-			}
+
+		// send as many chunks as possible within limit: if cannot send all chunks try sending the last (smaller due to division rest) chunk
+		// chunk sending order does not matter as we are only interested in the theoretical limit
+		int chunksTaken;
+		for (chunksTaken=0; chunksTaken<this.fullSizeChunkCount && total <= theoreticalNumberOfSendableBytesSinceLastUpdate; chunksTaken++) {
+			total += PATH_MTU;
 		}
-		for (var chunkID: chunksTaken) {
-			this.chunks.remove(chunkID);
+		this.fullSizeChunkCount -= chunksTaken;
+		if (this.lastChunkSize > 0 && total + this.lastChunkSize <= theoreticalNumberOfSendableBytesSinceLastUpdate) {
+			total += this.lastChunkSize;
+			this.lastChunkSize = 0;
 		}
+
 		this.msgsent += total;
 		this.lastUpdate = now;
 	}
@@ -105,6 +106,7 @@ public class LimitedMTUConnection extends Connection {
 	/**
 	 * returns the current speed of the connection
 	 */
+	@Override
 	public double getSpeed() {
 		return this.currentspeed;
 	}
@@ -115,6 +117,7 @@ public class LimitedMTUConnection extends Connection {
      * already
      * @return the amount of bytes to be transferred
      */
+	@Override
     public int getRemainingByteCount() {
 		int bytesLeft = this.msgsize - this.msgsent;
 		return Math.max(bytesLeft, 0);
@@ -124,12 +127,8 @@ public class LimitedMTUConnection extends Connection {
 	 * Returns true if the current message transfer is done.
 	 * @return True if the transfer is done, false if not
 	 */
+	@Override
 	public boolean isMessageTransferred() {
         return this.msgsent >= this.msgsize;
 	}
-
-	private String getChunkID(String messageID, int chunkIndex) {
-		return messageID + "_" + chunkIndex;
-	}
-
 }
