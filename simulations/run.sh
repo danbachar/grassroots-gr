@@ -118,7 +118,7 @@ prepare_config_files() {
     for size in "${SIZES[@]}"; do
         for run in $(seq 1 $NUM_RUNS); do
             RANDOM_SEED=$((size+run))
-            sed -e "s/Scenario.name = .*/Scenario.name = ER_${size}_run${run}/" \
+            sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_${size}_run${run}/" \
                 -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
                 the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}.txt"
         done
