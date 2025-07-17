@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from matplotlib import ticker
 import matplotlib.pyplot as plt
 import pickle
 from load_data import Message, Hop # Hop is needed, otherwise the pickle load won't work
@@ -10,7 +9,7 @@ from load_data import Message, Hop # Hop is needed, otherwise the pickle load wo
 
 def plot_hop_counts(df):
     """Plot hop count distributions for each message size using a grouped bar plot"""
-    fig, ax = plt.subplots(figsize=(15, 8))
+    fig, ax = plt.subplots(figsize=(12, 8))
     
     # Get unique sizes and create color map
     sizes = sorted(df['Size'].unique())
@@ -142,7 +141,7 @@ def plot_distance_vs_hopcount_by_size(df, num_bins = 20):
     plt.savefig(f'figures/distance_hopcount_per_size.png', dpi=300, bbox_inches='tight')
 
 def plot_latency_frequency_by_size(messages):
-    """Plot smoothed percentile distribution of latencies with specific percentile ticks"""
+    """Plot percentile distribution of latencies"""
     # Increase figure height to accommodate labels
     fig, ax = plt.subplots(figsize=(12, 10))
     
@@ -320,27 +319,37 @@ def plot_node_degree_vs_latency(messages):
                 bbox_inches='tight', dpi=300)
     plt.close()
 
+def calculate_theoretical_bitrate(message_size, distance):
+    """
+    Calculate theoretical bitrate as message_size / distance.
+    This represents the ideal case where transmission rate is inversely proportional to distance.
+    """
+    return message_size / distance if distance > 0 else 0
+
+
 def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outliers=True):
-    """Plot bitrate vs distance aggregated across all message sizes using robust statistics"""
+    """Plot bitrate vs distance - creates both aggregated and per-size plots"""
+    
+    sizes = sorted(set(msg.size for msg in messages))
+    all_distances = [msg.distance for msg in messages if msg.distance > 0 and msg.delivery_time > 0]
+    min_dist = min(all_distances)
+    max_dist = max(all_distances)
+    distance_bins = np.linspace(min_dist, max_dist, num_bins)
+    bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
+    distance_range = np.linspace(min_dist, max_dist, 100)
+    
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    # Create DataFrame
     data = []
     for msg in messages:
         if msg.distance > 0 and msg.delivery_time > 0:
             bitrate = msg.size / msg.delivery_time
             data.append({
                 'Distance': msg.distance,
-                'Bitrate': bitrate
+                'Bitrate': bitrate,
             })
     
     df = pd.DataFrame(data)
-    
-    # Create distance bins
-    min_dist = df['Distance'].min()
-    max_dist = df['Distance'].max()
-    distance_bins = np.linspace(min_dist, max_dist, num_bins)
-    bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
     
     median_bitrates = []
     q1_bitrates = []
@@ -395,7 +404,7 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
     ax.plot(valid_centers, valid_medians, 
             color='blue',
             linewidth=2.5,
-            label='Median bitrate')
+            label='Median achieved bitrate')
     
     # Plot IQR as shaded area
     ax.fill_between(valid_centers, 
@@ -405,25 +414,136 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
                    color='blue',
                    label='IQR (25th-75th percentile)')
     
-    # Add sample sizes to plot
+    # Add theoretical maximum bitrate curve using max message size
+    max_message_size = max(msg.size for msg in messages)
+    theoretical_bitrates = [calculate_theoretical_bitrate(max_message_size, d) for d in distance_range]
+    
+    ax.plot(distance_range, theoretical_bitrates,
+            color='red',
+            linewidth=2.0,
+            linestyle='--',
+            label='Theoretical maximum bitrate')
+    
     for x, y, count in zip(valid_centers, valid_medians, valid_counts):
         ax.text(x, y * 1.1,  # Multiply by 1.1 for log scale positioning
                 f'n={count:,}',
                 ha='center', va='bottom',
                 fontsize=8)
     
-    # Customize plot
     ax.set_xlabel('Distance (m)')
     ax.set_ylabel('Bitrate (bytes/second)')
-    ax.set_title('Bitrate vs Distance (All Message Sizes)')
+    ax.set_title('Bitrate vs Distance: Achieved vs Theoretical Maximum (Aggregated)')
     ax.grid(True, alpha=0.3)
     ax.legend()
-    
-    # Set y-axis to log scale
     ax.set_yscale('log')
     
     plt.tight_layout()
     plt.savefig('figures/bitrate_vs_distance_aggregate.png', 
+                bbox_inches='tight', dpi=300)
+    plt.close()
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(sizes)))
+    
+    for i, size in enumerate(sizes):
+        # Filter messages for this size
+        size_messages = [msg for msg in messages 
+                        if msg.size == size and msg.distance > 0 and msg.delivery_time > 0]
+        
+        if not size_messages:
+            continue
+            
+        # Create DataFrame for this size
+        size_data = []
+        for msg in size_messages:
+            bitrate = msg.size / msg.delivery_time
+            size_data.append({
+                'Distance': msg.distance,
+                'Bitrate': bitrate,
+            })
+        
+        df_size = pd.DataFrame(size_data)
+        
+        median_bitrates = []
+        q1_bitrates = []
+        q3_bitrates = []
+        
+        # Calculate statistics for each bin
+        for j in range(len(distance_bins)-1):
+            mask = (df_size['Distance'] >= distance_bins[j]) & (df_size['Distance'] < distance_bins[j+1])
+            bin_data = df_size[mask]['Bitrate']
+            
+            if len(bin_data) > 0:
+                if remove_outliers:
+                    # Remove outliers using IQR method
+                    Q1 = bin_data.quantile(0.25)
+                    Q3 = bin_data.quantile(0.75)
+                    IQR = Q3 - Q1
+                    bin_data = bin_data[
+                        (bin_data >= Q1 - 1.5 * IQR) & 
+                        (bin_data <= Q3 + 1.5 * IQR)
+                    ]
+                
+                if len(bin_data) > 0:
+                    median_bitrates.append(bin_data.median())
+                    q1_bitrates.append(bin_data.quantile(0.25))
+                    q3_bitrates.append(bin_data.quantile(0.75))
+                else:
+                    median_bitrates.append(np.nan)
+                    q1_bitrates.append(np.nan)
+                    q3_bitrates.append(np.nan)
+            else:
+                median_bitrates.append(np.nan)
+                q1_bitrates.append(np.nan)
+                q3_bitrates.append(np.nan)
+        
+        median_bitrates = np.array(median_bitrates)
+        q1_bitrates = np.array(q1_bitrates)
+        q3_bitrates = np.array(q3_bitrates)
+        
+        # Remove NaN values for plotting
+        valid_mask = ~np.isnan(median_bitrates)
+        valid_centers = bin_centers[valid_mask]
+        valid_medians = median_bitrates[valid_mask]
+        valid_q1 = q1_bitrates[valid_mask]
+        valid_q3 = q3_bitrates[valid_mask]
+        
+        if len(valid_centers) == 0:
+            continue
+            
+        # Plot median line for this size
+        ax.plot(valid_centers, valid_medians, 
+                color=colors[i],
+                linewidth=2.5,
+                label=f'{size} bytes (median)')
+        
+        # Plot IQR as shaded area
+        ax.fill_between(valid_centers, 
+                       valid_q1, 
+                       valid_q3, 
+                       alpha=0.15,
+                       color=colors[i])
+        
+        # Add theoretical maximum bitrate curve for this size
+        theoretical_bitrates = [calculate_theoretical_bitrate(size, d) for d in distance_range]
+        
+        ax.plot(distance_range, theoretical_bitrates,
+                color=colors[i],
+                linewidth=1.5,
+                linestyle='--',
+                alpha=0.7,
+                label=f'{size} bytes (theoretical)')
+    
+    ax.set_xlabel('Distance (m)')
+    ax.set_ylabel('Bitrate (bytes/second)')
+    ax.set_title('Bitrate vs Distance by Message Size: Achieved vs Theoretical')
+    ax.grid(True, alpha=0.3)
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', 
+              fontsize=9, framealpha=0.9)
+    ax.set_yscale('log')
+    
+    plt.tight_layout()
+    plt.savefig('figures/bitrate_vs_distance_by_size.png', 
                 bbox_inches='tight', dpi=300)
     plt.close()
 
@@ -441,6 +561,7 @@ def plot_data_quality_analysis(messages: list[Message]):
     plot_latency_frequency_by_size(messages)
     plot_node_degree_vs_latency(messages)
     plot_bitrate_vs_distance(messages)
+    plot_message_frequency_by_distance(messages)
 
 def plot_correlation_heatmap(messages: list[Message]):
     data = []
@@ -490,11 +611,78 @@ def plot_correlation_heatmap(messages: list[Message]):
     plt.savefig(f'figures/correlation_heatmap.png', bbox_inches='tight', dpi=300)
     plt.close()
 
+def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
+    """Plot frequency of created messages per distance"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Extract distances from all messages (including failed deliveries)
+    distances = [msg.distance for msg in messages if msg.distance > 0]
+    
+    if not distances:
+        print("No valid distance data found for message frequency plot")
+        return
+    
+    min_dist = min(distances)
+    max_dist = max(distances)
+    distance_bins = np.linspace(min_dist, max_dist, num_bins + 1)
+    bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
+    bin_width = distance_bins[1] - distance_bins[0]
+    
+    message_counts = []
+    for i in range(len(distance_bins)-1):
+        count = sum(1 for d in distances if distance_bins[i] <= d < distance_bins[i+1])
+        message_counts.append(count)
+    
+    bars = ax.bar(bin_centers, message_counts, 
+                  width=bin_width * 0.8, 
+                  alpha=0.7, 
+                  color='skyblue',
+                  edgecolor='navy',
+                  linewidth=0.5)
+    
+    for bar, count in zip(bars, message_counts):
+        if count > 0:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{count}',
+                   ha='center', va='bottom',
+                   fontsize=9)
+    
+    total_messages = len(distances)
+    mean_distance = np.mean(distances)
+    std_distance = np.std(distances)
+    
+    stats_text = f"Statistics:\n"
+    stats_text += f"Total messages: {total_messages:,}\n"
+    stats_text += f"Mean distance: {mean_distance:.1f} m\n"
+    stats_text += f"Std deviation: {std_distance:.1f} m\n"
+    stats_text += f"Distance range: {min_dist:.1f} - {max_dist:.1f} m"
+    
+    ax.text(0.98, 0.98, stats_text,
+            transform=ax.transAxes,
+            verticalalignment='top',
+            horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+            fontsize=10)
+    
+    ax.set_xlabel('Distance (m)', fontsize=12)
+    ax.set_ylabel('Number of Messages', fontsize=12)
+    ax.set_title('Message Creation Frequency by Distance', fontsize=14)
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    # Constrain x-axis to found bins
+    ax.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
+    
+    plt.tight_layout()
+    plt.savefig('figures/message-distance-distribution.png', 
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
 def main():
     with open("message.pkl", 'rb') as f:
         messages = pickle.load(f)
 
-    # Filter messages with invalid data
+    # Filter messages with invalid data: 0 message size, 0 distance (message to self?), instant delivery
     messages = [msg for msg in messages if msg.size > 0 and msg.distance > 0 and msg.delivery_time > 0]
     
     plot_data_quality_analysis(messages)
