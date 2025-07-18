@@ -5,14 +5,12 @@ Scenario.updateInterval = 1
 Scenario.endTime = 7200
 
 # Reports
-Report.nrofReports = 4
-Report.report1 = DistanceDelayReport
-Report.report2 = DeliveredMessagesReport
-Report.report3 = ConnectivityONEReport
-Report.report4 = EventLogReport
+Report.nrofReports = 1
+Report.report1 = UnifiedReport
 Report.reportDir=reports_data
 Report.xCount = 500
 Report.yCount = 500
+Report.bufferSize = 20000
 
 MovementModel.worldSize = 500, 500
 MovementModel.warmup = 0
@@ -21,9 +19,8 @@ MovementModel.rngSeed = 1
 ## Group settings
 Scenario.nrofHostGroups = 1
 
-# Random stationary nodes for Erdos-Renyi simulation
 Group1.groupID = random_stationary_
-Group1.nrofHosts = 50
+Group1.nrofHosts = 10
 Group1.movementModel = RandomStationaryConstrained
 Group1.offsetX = 50
 Group1.offsetY = 50
