@@ -7,43 +7,67 @@ from load_data import Message, Hop # Hop is needed, otherwise the pickle load wo
 # Disclaimer: Claude 4.0 helped writing this code, especially in plotting. 
 # Data processing and loading was done by us
 
+def create_dataframe(messages: list[Message]):
+    """Create a pandas DataFrame from Message objects for analysis"""
+    data = []
+    for msg in messages:
+        if msg.hops:  # Only include messages that have hop data
+            data.append({
+                'Communication_Range': msg.communication_range,
+                'Hop_Count': len(msg.hops),
+                'Distance': msg.distance,
+                'Delivery_Time': msg.delivery_time,
+                'Message_Size': msg.size
+            })
+    return pd.DataFrame(data)
+
 def plot_hop_counts(df):
-    """Plot hop count distributions for each message size using a grouped bar plot"""
+    """Plot hop count distributions for each communication range using a grouped bar plot"""
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    # Get unique sizes and create color map
-    sizes = sorted(df['Size'].unique())
-    colors = plt.cm.tab10(np.linspace(0, 1, len(sizes)))
+    # Get unique communication ranges and create color map
+    ranges = sorted(df['Communication_Range'].unique(), key=int)
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
     
     # Get unique hop counts that actually exist in the data
     unique_hop_counts = sorted(df['Hop_Count'].unique())
     
     # Width of each bar and positions of bar groups
-    bar_width = 0.8 / len(sizes)  # Adjust total width of group
+    bar_width = 0.8 / len(ranges)  # Adjust total width of group
     
     # Store frequencies for statistics
     all_frequencies = {}
     
-    # Plot bars for each size
-    for i, size in enumerate(sizes):
-        size_data = df[df['Size'] == size]['Hop_Count']
+    # First pass: calculate all frequencies to determine which hop counts to show
+    hop_counts_to_show = set()
+    for i, comm_range in enumerate(ranges):
+        range_data = df[df['Communication_Range'] == comm_range]['Hop_Count']
         
-        # Calculate frequencies
-        unique, counts = np.unique(size_data, return_counts=True)
-        freq_pct = (counts / len(size_data)) * 100
-        all_frequencies[size] = dict(zip(unique, freq_pct))
+        unique, counts = np.unique(range_data, return_counts=True)
+        freq_pct = (counts / len(range_data)) * 100
+        all_frequencies[comm_range] = dict(zip(unique, freq_pct))
         
-        # Calculate bar positions using actual hop count values
-        x = np.array(unique_hop_counts) + i * bar_width - (len(sizes)-1) * bar_width/2
+        # Add hop counts that have >= 1% frequency for at least one range
+        for hop_count, freq in zip(unique, freq_pct):
+            if freq >= 1.0:
+                hop_counts_to_show.add(hop_count)
+    
+    # Filter to only hop counts that will actually be displayed
+    unique_hop_counts = sorted(list(hop_counts_to_show))
+    
+    # Plot bars for each communication range
+    for i, comm_range in enumerate(ranges):
+        # Use pre-calculated frequencies
+        x = np.array(unique_hop_counts) + i * bar_width - (len(ranges)-1) * bar_width/2
         
-        # Create frequency array matching unique_hop_counts
         freq_array = np.zeros(len(unique_hop_counts))
         for j, hop_count in enumerate(unique_hop_counts):
-            freq_array[j] = all_frequencies[size].get(hop_count, 0)
+            freq_value = all_frequencies[comm_range].get(hop_count, 0)
+            # Only show bars with frequency >= 1%
+            freq_array[j] = freq_value if freq_value >= 1.0 else 0
         
-        # Plot bars
         bars = ax.bar(x, freq_array, bar_width, 
-                     label=f'{int(size)} bytes',
+                     label=f'{int(comm_range)}m range',
                      color=colors[i],
                      alpha=0.7)
         
@@ -56,44 +80,32 @@ def plot_hop_counts(df):
                        ha='center', va='bottom',
                        rotation=90,
                        fontsize=8)
-    
-    # Add mean hop count for each size in text box
-    text_str = "Mean Hop Counts:\n"
-    for size in sizes:
-        size_data = df[df['Size'] == size]['Hop_Count']
-        mean_hops = size_data.mean()
-        std_hops = size_data.std()
-        text_str += f"{int(size)} bytes: {mean_hops:.2f} ± {std_hops:.2f}\n"
-    
-    # Position the text box in the upper right corner
-    ax.text(0.95, 0.95, text_str,
-            transform=ax.transAxes,
-            verticalalignment='top',
-            horizontalalignment='right',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-    
-    # Customize plot
+
     ax.set_xlabel('Hop Count')
     ax.set_ylabel('Frequency (%)')
-    ax.set_title('Hop Count Distribution by Message Size')
+    ax.set_title('Hop Count Distribution by Communication Range')
     ax.set_xticks(unique_hop_counts)
+    ax.set_xlim(min(unique_hop_counts) - 0.5, max(unique_hop_counts) + 0.5)  # Limit x-axis to observed hop counts
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax.grid(True, alpha=0.3, axis='y')
+    ax.set_yscale('log')  # Make y-axis logarithmic to better show small frequencies
     
     plt.tight_layout()
-    plt.savefig(f'figures/hopcount_distribution_by_size.png', 
+    plt.savefig(f'figures/hopcount_distribution_by_range.png', 
                 bbox_inches='tight', dpi=300)
     plt.close()
 
-def plot_distance_vs_hopcount_by_size(df, num_bins = 20):
+def plot_distance_vs_hopcount_by_range(df, num_bins = 20):
     fig, ax = plt.subplots(figsize=(12, 8))
+    ranges: list[int] = sorted(df['Communication_Range'].unique(), key=int)
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
 
-    for size in sorted(df['Size'].unique()):
-        size_data = df[df['Size'] == size]
+    for comm_index, comm_range in enumerate(ranges):
+        range_data = df[df['Communication_Range'] == comm_range]
         
         # Create distance bins
-        min_dist = size_data['Distance'].min()
-        max_dist = size_data['Distance'].max()
+        min_dist = range_data['Distance'].min()
+        max_dist = range_data['Distance'].max()
         distance_bins = np.linspace(min_dist, max_dist, num_bins)
         bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
         
@@ -102,8 +114,8 @@ def plot_distance_vs_hopcount_by_size(df, num_bins = 20):
         
         # Calculate mean and std for each bin
         for i in range(len(distance_bins)-1):
-            mask = (size_data['Distance'] >= distance_bins[i]) & (size_data['Distance'] < distance_bins[i+1])
-            bin_data = size_data[mask]['Hop_Count']
+            mask = (range_data['Distance'] >= distance_bins[i]) & (range_data['Distance'] < distance_bins[i+1])
+            bin_data = range_data[mask]['Hop_Count']
             if len(bin_data) > 0:  # Only include bins with data
                 mean_hops.append(bin_data.mean())
                 std_hops.append(bin_data.std())
@@ -119,10 +131,10 @@ def plot_distance_vs_hopcount_by_size(df, num_bins = 20):
         valid_centers = bin_centers[valid_mask]
         valid_means = mean_hops[valid_mask]
         valid_stds = std_hops[valid_mask]
-        
-        # Plot mean line
+
         line = ax.plot(valid_centers, valid_means, 
-                        label=f'{int(size)} bytes', 
+                        label=f'{int(comm_range)}m range',
+                        color=colors[comm_index],
                         linewidth=2)
         
         # Plot standard deviation as shaded area
@@ -131,22 +143,21 @@ def plot_distance_vs_hopcount_by_size(df, num_bins = 20):
                         valid_means + valid_stds, 
                         alpha=0.2, 
                         color=line[0].get_color())
-
     ax.set_xlabel('Distance (m)')
     ax.set_ylabel('Average Hop Count')
-    ax.set_title('Distance vs Average Hop Count by Message Size')
+    ax.set_title('Distance vs Average Hop Count by Communication Range')
     ax.legend()
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig(f'figures/distance_hopcount_per_size.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'figures/distance_hopcount_per_range.png', dpi=300, bbox_inches='tight')
 
-def plot_latency_frequency_by_size(messages):
+def plot_latency_frequency_by_range(messages):
     """Plot percentile distribution of latencies"""
     # Increase figure height to accommodate labels
     fig, ax = plt.subplots(figsize=(12, 10))
     
-    sizes = np.unique([msg.size for msg in messages])
-    colors = plt.cm.tab10(np.linspace(0, 1, len(sizes)))
+    ranges = sorted(np.unique([msg.communication_range for msg in messages]), key=int)
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
     
     special_percentiles = [50, 99.9, 99.99, 99.999, 99.9999]
     plotting_percentiles = [0] + special_percentiles
@@ -155,12 +166,18 @@ def plot_latency_frequency_by_size(messages):
     tick_positions = np.arange(len(special_percentiles))
     all_positions = np.arange(-1, len(special_percentiles))
     
-    for i, size in enumerate(sizes):
-        messages_for_size = list(filter(lambda msg, s_inner=int(size): 
-                                      msg.size == s_inner and msg.delivery_time > 0, 
+    for i, comm_range in enumerate(ranges):
+        messages_for_range = list(filter(lambda msg, r_inner=float(comm_range): 
+                                      msg.communication_range == r_inner and msg.delivery_time > 0, 
                                       messages))
         
-        latencies = sorted([msg.delivery_time for msg in messages_for_size])
+        latencies = sorted([msg.delivery_time for msg in messages_for_range])
+        
+        # Skip this range if no messages were delivered (empty latencies array)
+        if not latencies:
+            print(f"Warning: No delivered messages found for communication range {int(comm_range)}m - skipping this range in latency plot")
+            continue
+            
         percentiles = np.arange(1, len(latencies) + 1) / len(latencies) * 100
         
         plot_positions = []
@@ -179,18 +196,17 @@ def plot_latency_frequency_by_size(messages):
             plot_latencies.append(latency_at_percentile)
         
         ax.plot(plot_positions, plot_latencies, 
-                label=f'{size} bytes', 
+                label=f'{int(comm_range)}m range', 
                 color=colors[i],
                 linewidth=2.5,
                 marker='o',
                 markersize=4)
         
-        percentile_stats[size] = {
+        percentile_stats[comm_range] = {
             p: np.interp(p, percentiles, latencies) 
             for p in special_percentiles
         }
 
-    
     # Set x-axis limits to show from 0% position to highest percentile with margin
     ax.set_xlim(-1.2, len(special_percentiles) - 0.5)
     
@@ -203,11 +219,11 @@ def plot_latency_frequency_by_size(messages):
     ax.set_ylabel('Latency (seconds)', fontsize=12)
     ax.set_title('Latency Percentile Distribution', fontsize=14, pad=20)
     
-    # Improve legend
     ax.legend(loc='upper left', 
              fontsize=10, 
              framealpha=0.9,
-             title='Message Sizes')
+             title='Communication Ranges')
+    ax.set_yscale('log')
     
     # Adjust layout with more space for labels
     plt.subplots_adjust(left=0.15)  # Increase left margin
@@ -215,16 +231,8 @@ def plot_latency_frequency_by_size(messages):
                 bbox_inches='tight', dpi=300)
     plt.close()
 
-    # Print statistics
-    print("\nLatency Percentiles by Message Size:")
-    for size in sizes:
-        if size in percentile_stats:
-            print(f"\nMessage Size: {size} bytes")
-            for p in special_percentiles:
-                print(f"{p}th percentile: {percentile_stats[size][p]:.2f}s")
-
 def plot_node_degree_vs_latency(messages):
-    """Plot relationship between node degree and hop latency aggregated across all message sizes"""
+    """Plot relationship between node degree and hop latency aggregated across all communication ranges"""
     fig, ax = plt.subplots(figsize=(12, 8))
     
     # Create data points for each hop
@@ -280,7 +288,7 @@ def plot_node_degree_vs_latency(messages):
     # Customize plot
     ax.set_xlabel('Node Degree')
     ax.set_ylabel('Hop Latency (s)')
-    ax.set_title('Node Degree vs Hop Latency (All Message Sizes)')
+    ax.set_title('Node Degree vs Hop Latency (All Communication Ranges)')
     ax.grid(True, alpha=0.3)
     
     # Add statistics in text box
@@ -319,18 +327,34 @@ def plot_node_degree_vs_latency(messages):
                 bbox_inches='tight', dpi=300)
     plt.close()
 
-def calculate_theoretical_bitrate(message_size, distance):
+def calculate_theoretical_bitrate(message_size: np.floating, distance: np.floating) -> np.floating: 
     """
-    Calculate theoretical bitrate as message_size / distance.
-    This represents the ideal case where transmission rate is inversely proportional to distance.
+    Calculate theoretical maximum bitrate based on speed of light limit.
+    
+    This represents the absolute physical upper bound for information transmission,
+    assuming instantaneous processing and the speed of light as the only constraint.
+    
+    Args:
+        message_size: Size of the message in bytes
+        distance: Distance the message travels
+    
+    Returns:
+        Theoretical maximum bitrate (bytes/second) based on speed of light
     """
-    return message_size / distance if distance > 0 else 0
+    SPEED_OF_LIGHT = 299792458  # m/s in vacuum
+    
+    # Time based on speed of light (absolute physical limit)
+    light_time = distance / SPEED_OF_LIGHT
+    
+    # Ensure minimum time to avoid division by zero
+    total_time = max(float(light_time), 1e-9)  # At least 1 nanosecond
 
+    return message_size / total_time
 
 def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outliers=True):
-    """Plot bitrate vs distance - creates both aggregated and per-size plots"""
+    """Plot bitrate vs distance - creates both aggregated and per-communication-range plots"""
     
-    sizes = sorted(set(msg.size for msg in messages))
+    comm_ranges = sorted(set(msg.communication_range for msg in messages), key=int)
     all_distances = [msg.distance for msg in messages if msg.distance > 0 and msg.delivery_time > 0]
     min_dist = min(all_distances)
     max_dist = max(all_distances)
@@ -414,15 +438,15 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
                    color='blue',
                    label='IQR (25th-75th percentile)')
     
-    # Add theoretical maximum bitrate curve using max message size
-    max_message_size = max(msg.size for msg in messages)
-    theoretical_bitrates = [calculate_theoretical_bitrate(max_message_size, d) for d in distance_range]
+    # Add theoretical maximum bitrate curve (speed of light upper bound)
+    avg_message_size = np.mean([msg.size for msg in messages])
+    theoretical_bitrates = [calculate_theoretical_bitrate(avg_message_size, d) for d in distance_range]
     
     ax.plot(distance_range, theoretical_bitrates,
             color='red',
             linewidth=2.0,
             linestyle='--',
-            label='Theoretical maximum bitrate')
+            label='Theoretical maximum\n(speed of light limit)')
     
     for x, y, count in zip(valid_centers, valid_medians, valid_counts):
         ax.text(x, y * 1.1,  # Multiply by 1.1 for log scale positioning
@@ -443,26 +467,26 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
     plt.close()
     
     fig, ax = plt.subplots(figsize=(12, 8))
-    colors = plt.cm.tab10(np.linspace(0, 1, len(sizes)))
+    colors = plt.cm.viridis(np.linspace(0, 1, len(comm_ranges)))
     
-    for i, size in enumerate(sizes):
-        # Filter messages for this size
-        size_messages = [msg for msg in messages 
-                        if msg.size == size and msg.distance > 0 and msg.delivery_time > 0]
+    for i, comm_range in enumerate(comm_ranges):
+        # Filter messages for this communication range
+        range_messages = [msg for msg in messages 
+                        if msg.communication_range == comm_range and msg.distance > 0 and msg.delivery_time > 0]
         
-        if not size_messages:
+        if not range_messages:
             continue
             
-        # Create DataFrame for this size
-        size_data = []
-        for msg in size_messages:
+        # Create DataFrame for this communication range
+        range_data = []
+        for msg in range_messages:
             bitrate = msg.size / msg.delivery_time
-            size_data.append({
+            range_data.append({
                 'Distance': msg.distance,
                 'Bitrate': bitrate,
             })
         
-        df_size = pd.DataFrame(size_data)
+        df_range = pd.DataFrame(range_data)
         
         median_bitrates = []
         q1_bitrates = []
@@ -470,8 +494,8 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
         
         # Calculate statistics for each bin
         for j in range(len(distance_bins)-1):
-            mask = (df_size['Distance'] >= distance_bins[j]) & (df_size['Distance'] < distance_bins[j+1])
-            bin_data = df_size[mask]['Bitrate']
+            mask = (df_range['Distance'] >= distance_bins[j]) & (df_range['Distance'] < distance_bins[j+1])
+            bin_data = df_range[mask]['Bitrate']
             
             if len(bin_data) > 0:
                 if remove_outliers:
@@ -501,7 +525,6 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
         q1_bitrates = np.array(q1_bitrates)
         q3_bitrates = np.array(q3_bitrates)
         
-        # Remove NaN values for plotting
         valid_mask = ~np.isnan(median_bitrates)
         valid_centers = bin_centers[valid_mask]
         valid_medians = median_bitrates[valid_mask]
@@ -511,11 +534,11 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
         if len(valid_centers) == 0:
             continue
             
-        # Plot median line for this size
+        # Plot median line for this communication range
         ax.plot(valid_centers, valid_medians, 
                 color=colors[i],
                 linewidth=2.5,
-                label=f'{size} bytes (median)')
+                label=f'{int(comm_range)}m range (median)')
         
         # Plot IQR as shaded area
         ax.fill_between(valid_centers, 
@@ -523,45 +546,323 @@ def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outlie
                        valid_q3, 
                        alpha=0.15,
                        color=colors[i])
-        
-        # Add theoretical maximum bitrate curve for this size
-        theoretical_bitrates = [calculate_theoretical_bitrate(size, d) for d in distance_range]
-        
-        ax.plot(distance_range, theoretical_bitrates,
-                color=colors[i],
-                linewidth=1.5,
-                linestyle='--',
-                alpha=0.7,
-                label=f'{size} bytes (theoretical)')
+    
+    # Add single theoretical maximum bitrate curve (speed of light upper bound)
+    # Use average message size across all communication ranges for consistency
+    avg_message_size = np.mean([msg.size for msg in messages])
+    theoretical_bitrates = [calculate_theoretical_bitrate(avg_message_size, d) for d in distance_range]
+    
+    ax.plot(distance_range, theoretical_bitrates,
+            color='red',
+            linewidth=2.0,
+            linestyle='--',
+            label='Theoretical maximum\n(speed of light limit)')
     
     ax.set_xlabel('Distance (m)')
     ax.set_ylabel('Bitrate (bytes/second)')
-    ax.set_title('Bitrate vs Distance by Message Size: Achieved vs Theoretical')
+    ax.set_title('Bitrate vs Distance by Communication Range: Achieved vs Theoretical')
     ax.grid(True, alpha=0.3)
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', 
               fontsize=9, framealpha=0.9)
     ax.set_yscale('log')
     
     plt.tight_layout()
-    plt.savefig('figures/bitrate_vs_distance_by_size.png', 
+    plt.savefig('figures/bitrate_vs_distance_by_range.png', 
                 bbox_inches='tight', dpi=300)
     plt.close()
 
-def plot_data_quality_analysis(messages: list[Message]):
-    data = {
-        'Distance': [msg.distance for msg in messages],
-        'Size': [msg.size for msg in messages],
-        'Hop_Count': [len(msg.hops) for msg in messages],
-        'Latency': [msg.delivery_time for msg in messages]
-    }
+def plot_node_degree_vs_communication_radius(messages: list[Message]):
+    """Plot relationship between communication range and node degree (aggregated)"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Extract data for all hops
+    data = []
+    for msg in messages:
+        if msg.hops:
+            for hop in msg.hops:
+                if hop.hop_time > 0:
+                    data.append({
+                        'node_degree': hop.from_node_degree,
+                        'communication_range': msg.communication_range
+                    })
+    
     df = pd.DataFrame(data)
     
-    plot_hop_counts(df)
-    plot_distance_vs_hopcount_by_size(df)
-    plot_latency_frequency_by_size(messages)
-    plot_node_degree_vs_latency(messages)
-    plot_bitrate_vs_distance(messages)
-    plot_message_frequency_by_distance(messages)
+    # Get unique communication ranges and calculate statistics
+    comm_ranges = sorted(df['communication_range'].unique(), key=int)
+    mean_degrees = []
+    std_degrees = []
+    median_degrees = []
+    q1_degrees = []
+    q3_degrees = []
+    sample_counts = []
+    
+    for comm_range in comm_ranges:
+        range_data = df[df['communication_range'] == comm_range]['node_degree']
+        
+        mean_degrees.append(range_data.mean())
+        std_degrees.append(range_data.std())
+        median_degrees.append(range_data.median())
+        q1_degrees.append(range_data.quantile(0.25))
+        q3_degrees.append(range_data.quantile(0.75))
+        sample_counts.append(len(range_data))
+    
+    mean_degrees = np.array(mean_degrees)
+    std_degrees = np.array(std_degrees)
+    median_degrees = np.array(median_degrees)
+    q1_degrees = np.array(q1_degrees)
+    q3_degrees = np.array(q3_degrees)
+    
+    # Plot median line with IQR band
+    ax.plot(comm_ranges, median_degrees, 
+            color='red', 
+            linewidth=2, 
+            linestyle='--',
+            marker='s', 
+            markersize=6,
+            label='Median node degree')
+    
+    ax.fill_between(comm_ranges, 
+                   q1_degrees, 
+                   q3_degrees, 
+                   alpha=0.15, 
+                   color='red',
+                   label='IQR (25th-75th percentile)')
+    
+    # Add sample size annotations
+    for x, y, count in zip(comm_ranges, mean_degrees, sample_counts):
+        ax.text(x, y + 0.1, 
+                f'n={count:,}',
+                ha='center', va='bottom',
+                fontsize=8,
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+    
+    ax.set_xlabel('Communication Range (m)', fontsize=12)
+    ax.set_ylabel('Node Degree', fontsize=12)
+    ax.set_title('Node Degree vs. Communication Range', fontsize=14)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper left', fontsize=10, framealpha=0.9)
+    
+    plt.tight_layout()
+    plt.savefig('figures/node_degree_vs_communication_radius.png', 
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
+def plot_node_degree_vs_hop_count(messages: list[Message]):
+    """Plot relationship between node degree and hop count (aggregated)"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Extract data for each hop along message paths
+    data = []
+    for msg in messages:
+        if msg.hops and len(msg.hops) > 0:
+            total_hops = len(msg.hops)
+            for hop in msg.hops:
+                if hop.hop_time > 0:
+                    data.append({
+                        'node_degree': hop.from_node_degree,
+                        'hop_count': total_hops
+                    })
+    
+    df = pd.DataFrame(data)
+    
+    # Create node degree bins
+    degree_bins = np.arange(0, 51, 5)  # 0-50 in steps of 5
+    median_hops = []
+    q1_hops = []
+    q3_hops = []
+    bin_centers = []
+    sample_counts = []
+    
+    for i in range(len(degree_bins)-1):
+        mask = (df['node_degree'] >= degree_bins[i]) & (df['node_degree'] < degree_bins[i+1])
+        if mask.any():
+            bin_data = df[mask]['hop_count']
+            median_hops.append(bin_data.median())
+            q1_hops.append(bin_data.quantile(0.25))
+            q3_hops.append(bin_data.quantile(0.75))
+            bin_centers.append((degree_bins[i] + degree_bins[i+1]) / 2)
+            sample_counts.append(len(bin_data))
+    
+    median_hops = np.array(median_hops)
+    q1_hops = np.array(q1_hops)
+    q3_hops = np.array(q3_hops)
+    bin_centers = np.array(bin_centers)
+    
+    # Plot median line with IQR band
+    ax.plot(bin_centers, median_hops, 
+            color='blue', 
+            linewidth=3, 
+            marker='o', 
+            markersize=8,
+            label='Median hop count')
+    
+    ax.fill_between(bin_centers, 
+                   q1_hops, 
+                   q3_hops, 
+                   alpha=0.2, 
+                   color='blue',
+                   label='IQR (25th-75th percentile)')
+    
+    # Add sample size annotations
+    for x, y, count in zip(bin_centers, median_hops, sample_counts):
+        ax.text(x, y + 0.1, 
+                f'n={count:,}',
+                ha='center', va='bottom',
+                fontsize=8,
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+    
+    ax.set_xlabel('Node Degree', fontsize=12)
+    ax.set_ylabel('Hop Count', fontsize=12)
+    ax.set_title('Node Degree vs Hop Count (Aggregated)', fontsize=14)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+    
+    plt.tight_layout()
+    plt.savefig('figures/node_degree_vs_hop_count.png',
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
+def plot_hop_latency_vs_communication_radius(messages: list[Message]):
+    """Plot relationship between hop latency and communication radius as smooth aggregated line"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Extract data for all hops
+    data = []
+    for msg in messages:
+        if msg.hops:
+            for hop in msg.hops:
+                if hop.hop_time > 0:
+                    data.append({
+                        'hop_latency': hop.hop_time,
+                        'communication_range': msg.communication_range
+                    })
+    
+    df = pd.DataFrame(data)
+    
+    # Get unique communication ranges and calculate statistics
+    comm_ranges = sorted(df['communication_range'].unique(), key=int)
+    mean_latencies = []
+    std_latencies = []
+    median_latencies = []
+    q1_latencies = []
+    q3_latencies = []
+    sample_counts = []
+    
+    for comm_range in comm_ranges:
+        range_data = df[df['communication_range'] == comm_range]['hop_latency']
+        
+        mean_latencies.append(range_data.mean())
+        std_latencies.append(range_data.std())
+        median_latencies.append(range_data.median())
+        q1_latencies.append(range_data.quantile(0.25))
+        q3_latencies.append(range_data.quantile(0.75))
+        sample_counts.append(len(range_data))
+    
+    mean_latencies = np.array(mean_latencies)
+    std_latencies = np.array(std_latencies)
+    median_latencies = np.array(median_latencies)
+    q1_latencies = np.array(q1_latencies)
+    q3_latencies = np.array(q3_latencies)
+    
+    # Plot median line with IQR band
+    ax.plot(comm_ranges, median_latencies, 
+            color='red', 
+            linewidth=2, 
+            linestyle='--',
+            marker='s', 
+            markersize=6,
+            label='Median hop latency')
+    
+    ax.fill_between(comm_ranges, 
+                   q1_latencies, 
+                   q3_latencies, 
+                   alpha=0.15, 
+                   color='red',
+                   label='IQR (25th-75th percentile)')
+    
+    ax.set_xlabel('Communication Range (m)', fontsize=12)
+    ax.set_ylabel('Hop Latency (s)', fontsize=12)
+    ax.set_title('Median Hop Latency vs. Communication Range', fontsize=14)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('figures/hop_latency_vs_communication_radius.png',
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
+def plot_hop_latency_vs_node_degree(messages: list[Message]):
+    """Plot relationship between hop latency and node degree"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Extract data for all hops
+    data = []
+    for msg in messages:
+        if msg.hops:
+            for hop in msg.hops:
+                if hop.hop_time > 0:
+                    data.append({
+                        'hop_latency': hop.hop_time,
+                        'node_degree': hop.from_node_degree
+                    })
+    
+    df = pd.DataFrame(data)
+    
+    degree_bins = np.arange(0, 51, 5)
+    median_latencies = []
+    q1_latencies = []
+    q3_latencies = []
+    bin_centers = []
+    sample_counts = []
+    
+    for i in range(len(degree_bins)-1):
+        mask = (df['node_degree'] >= degree_bins[i]) & (df['node_degree'] < degree_bins[i+1])
+        if mask.any():
+            bin_data = df[mask]['hop_latency']
+            median_latencies.append(bin_data.median())
+            q1_latencies.append(bin_data.quantile(0.25))
+            q3_latencies.append(bin_data.quantile(0.75))
+            bin_centers.append((degree_bins[i] + degree_bins[i+1]) / 2)
+            sample_counts.append(len(bin_data))
+    
+    median_latencies = np.array(median_latencies)
+    q1_latencies = np.array(q1_latencies)
+    q3_latencies = np.array(q3_latencies)
+    bin_centers = np.array(bin_centers)
+    
+    # Plot median line with IQR band
+    ax.plot(bin_centers, median_latencies,
+            color='blue',
+            linewidth=3,
+            marker='o',
+            markersize=8,
+            label='Median hop latency')
+    
+    ax.fill_between(bin_centers, 
+                   q1_latencies, 
+                   q3_latencies, 
+                   alpha=0.2, 
+                   color='blue',
+                   label='IQR (25th-75th percentile)')
+    
+    # Add sample size annotations
+    for x, y, count in zip(bin_centers, median_latencies, sample_counts):
+        ax.text(x, y + 1, 
+                f'n={count:,}',
+                ha='center', va='bottom',
+                fontsize=8,
+                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+    
+    ax.set_xlabel('Node Degree', fontsize=12)
+    ax.set_ylabel('Hop Latency (s)', fontsize=12)
+    ax.set_title('Hop Latency vs. Node Degree', fontsize=14)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+    
+    plt.tight_layout()
+    plt.savefig('figures/hop_latency_vs_node_degree.png',
+                bbox_inches='tight', dpi=300)
+    plt.close()
 
 def plot_correlation_heatmap(messages: list[Message]):
     data = []
@@ -569,7 +870,7 @@ def plot_correlation_heatmap(messages: list[Message]):
         if msg.hops:
             for hop in msg.hops:
                 data.append({
-                    'Message_Size': msg.size,
+                    'Communication_Range': msg.communication_range,
                     'Total_Distance': msg.distance,
                     'Total_Hops': len(msg.hops),
                     'Total_Latency': msg.delivery_time,
@@ -599,7 +900,7 @@ def plot_correlation_heatmap(messages: list[Message]):
     for i in range(len(correlation_matrix.columns)):
         for j in range(len(correlation_matrix.columns)):
             value = correlation_matrix.iloc[i, j]
-            color = 'white' if abs(value) > 0.5 else 'black'
+            color = 'black'
             ax.text(j, i, f'{value:.3f}', 
                    ha='center', va='center',
                    color=color, fontweight='bold', 
@@ -678,16 +979,88 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
                 bbox_inches='tight', dpi=300)
     plt.close()
 
-def main():
-    with open("message.pkl", 'rb') as f:
-        messages = pickle.load(f)
-
-    # Filter messages with invalid data: 0 message size, 0 distance (message to self?), instant delivery
-    messages = [msg for msg in messages if msg.size > 0 and msg.distance > 0 and msg.delivery_time > 0]
+def plot_deliverability_vs_communication_range(all_messages: list[Message], delivered_messages: list[Message]):
+    """Plot deliverability percentage vs communication range"""
+    fig, ax = plt.subplots(figsize=(12, 8))
     
-    plot_data_quality_analysis(messages)
+    all_ranges = sorted(set(msg.communication_range for msg in all_messages), key=int)
+    delivered_ranges = sorted(set(msg.communication_range for msg in delivered_messages), key=int)
+    
+    total_counts = {}
+    delivered_counts = {}
+    
+    for comm_range in all_ranges:
+        total_counts[comm_range] = len([msg for msg in all_messages if msg.communication_range == comm_range])
+        delivered_counts[comm_range] = len([msg for msg in delivered_messages if msg.communication_range == comm_range])
+    
+    ranges = []
+    percentages = []
+    raw_counts = []
+    
+    for comm_range in all_ranges:
+        total = total_counts.get(comm_range, 0)
+        delivered = delivered_counts.get(comm_range, 0)
+        
+        if total > 0:
+            percentage = (delivered / total) * 100
+            ranges.append(comm_range)
+            percentages.append(percentage)
+            raw_counts.append((delivered, total))
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    bars = ax.bar(range(len(ranges)), percentages, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
+    
+    # Add percentage labels on top of bars
+    for i, (bar, percentage, (delivered, total)) in enumerate(zip(bars, percentages, raw_counts)):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                f'{percentage:.1f}%',
+                ha='center', va='bottom',
+                fontsize=10)
+        
+        # Add count labels inside bars
+        ax.text(bar.get_x() + bar.get_width()/2., height/2,
+                f'{delivered:,}',
+                ha='center', va='center',
+                fontsize=8,
+                color='black')
+    
+    ax.set_xlabel('Communication Range (m)', fontsize=12)
+    ax.set_ylabel('Deliverability (%)', fontsize=12)
+    ax.set_title('Message Deliverability vs Communication Range', fontsize=14)
+    ax.set_xticks(range(len(ranges)))
+    ax.set_xticklabels([f'{int(r)}m' for r in ranges])
+    ax.set_ylim(0, 105)  # Set y-axis from 0 to 105%
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    plt.savefig('figures/deliverability_vs_communication_range.png',
+                bbox_inches='tight', dpi=300)
+    plt.close()
 
+def main():
+    with open("delivered_messages.pkl", 'rb') as f:
+        messages: list[Message] = pickle.load(f)
+    
+    with open("all_messages.pkl", 'rb') as f:
+        all_messages: list[Message] = pickle.load(f)
+
+    unique_ranges = sorted(set(msg.communication_range for msg in messages))
+    print(f"Unique ranges: {unique_ranges}")
+
+    df = create_dataframe(messages)
+    
+    plot_deliverability_vs_communication_range(all_messages, messages)
+    plot_hop_counts(df)
+    plot_distance_vs_hopcount_by_range(df)
+    plot_latency_frequency_by_range(messages)
+    plot_bitrate_vs_distance(messages)
     plot_correlation_heatmap(messages)
+    plot_message_frequency_by_distance(messages)
+    plot_node_degree_vs_communication_radius(messages)
+    plot_node_degree_vs_hop_count(messages)
+    plot_hop_latency_vs_communication_radius(messages)
+    plot_hop_latency_vs_node_degree(messages)
     
     print("All plots generated successfully!")
 

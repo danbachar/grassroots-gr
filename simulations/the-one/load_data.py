@@ -384,14 +384,12 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
             connectivity_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_ConnectivityONEReport.txt"
             eventlog_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_EventLogReport.txt"
             
-            # Load all created messages
-            created_messages_run = load_all_created_messages(eventlog_file, int(message_size), float(range_suffix))
+            created_messages_run = load_all_created_messages(eventlog_file, message_size, range_suffix)
             for msg in created_messages_run:
                 msg.id = f"{msg.id}_run{run}_range{range_suffix}"
                 all_created_messages.append(msg)
                 created_count += 1
             
-            # Load delivered messages (existing functionality)
             distance_messages = load_distance_delay_data(distance_file)
             message_sizes_and_hops = load_delivered_messages_data(delivered_file)
 
@@ -406,8 +404,8 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
                     msg.size = message_sizes_and_hops[msg.id]['size']
                     msg.hops = message_node_degrees[msg.id].hops
                     delivered_count += 1
-                    
-                    msg.communication_range = range_suffix
+
+                    msg.communication_range = int(range_suffix)
                     msg.id = f"{msg.id}_run{run}_range{range_suffix}"
                     delivered_messages.append(msg)  # Only add delivered messages
         
@@ -478,7 +476,7 @@ def main():
     DEFAULT_MESSAGE_SIZE = 247
 
     parser = ArgumentParser(description="Combine reports generated from The ONE")
-    parser.add_argument("--ranges", nargs="+", default=DEFAULT_RANGES, help="List of communication ranges to process. Default is " + str(DEFAULT_RANGES))
+    parser.add_argument("--ranges", type=int, nargs="+", default=DEFAULT_RANGES, help="List of communication ranges to process. Default is " + str(DEFAULT_RANGES))
     parser.add_argument("--runs", type=int, default=DEFAULT_NUM_RUNS, help="Number of runs to process for each range. Default is " + str(DEFAULT_NUM_RUNS))
     parser.add_argument("--scenario-name", type=str, default="GR", help="Scenario name to process for the reports " + str(DEFAULT_SCENARIO_NAME))
     parser.add_argument("--message-size", type=int, default=DEFAULT_MESSAGE_SIZE, help="Message size used in the simulation filenames. Default is " + str(DEFAULT_MESSAGE_SIZE))
