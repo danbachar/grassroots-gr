@@ -208,7 +208,7 @@ public abstract class ActiveRouter extends MessageRouter {
 		if (this.getNrofMessages() == 0) {
 			return false;
 		}
-		if (this.getConnections().size() == 0) {
+		if (this.getConnections().isEmpty()) {
 			return false;
 		}
 
@@ -471,7 +471,7 @@ public abstract class ActiveRouter extends MessageRouter {
 	protected Connection exchangeDeliverableMessages() {
 		List<Connection> connections = getConnections();
 
-		if (connections.size() == 0) {
+		if (connections.isEmpty()) {
 			return null;
 		}
 
