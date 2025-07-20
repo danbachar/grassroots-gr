@@ -2,8 +2,7 @@ from itertools import takewhile
 from pickle import dump
 from argparse import ArgumentParser
 
-# Disclaimer: Claude 4.0 helped writing this code, especially in plotting. Data processing and loading was done by us.
-
+# Disclaimer: Claude 4.0 helped writing this code, especially in plotting.
 class Hop:
     def __init__(self, from_node: str, to_node: str, hop_time: float, from_node_degree: int) -> None:
         self.from_node = from_node
@@ -20,16 +19,18 @@ class Message:
     - ID: Message identifier
     - distance: Distance travelled by the message
     - size: Size of the message in bytes
+    - communication_range: Communication range setting for this message's simulation
     - peer_density: Number of peer connections at message creation time
     - hop_count: Number of hops the message took
     - delivery_time: Time taken to deliver the message
     - is_delivered: Was the message delivered successfully
     - hops: the hops the message took (aggregated from transmissions and hops)
     """
-    def __init__(self, message_id, distance=0, size=0, peer_density=0, hop_count=0, delivery_time=0, is_delivered=0):
+    def __init__(self, message_id: str, distance: float=0, size: int=0, communication_range: int=0, peer_density: int=0, hop_count: int=0, delivery_time: float=0, is_delivered: int=0):
         self.id = message_id
         self.distance = distance
         self.size = size
+        self.communication_range = communication_range
         self.peer_density = peer_density
         self.hop_count = hop_count
         self.delivery_time = delivery_time
@@ -40,7 +41,7 @@ class Message:
         self.hops = hops
     
     def __str__(self):
-        return f"Message(id={self.id}, distance={self.distance}, size={self.size}, peer_density={self.peer_density}, hop_count={self.hop_count}, delivery_time={self.delivery_time}, is_delivered={self.is_delivered})"
+        return f"Message(id={self.id}, distance={self.distance}, size={self.size}, communication_range={self.communication_range}, peer_density={self.peer_density}, hop_count={self.hop_count}, delivery_time={self.delivery_time}, is_delivered={self.is_delivered})"
         
 class Transmission:
     """ Transmission represents a transmission of a message in hop
@@ -52,7 +53,7 @@ class Transmission:
     - delivery_time: time when the transmission was delivered
     - total_delivery_time: total time it took for the transmission to be delivered, incl. hops
     """
-    def __init__(self, timestamp: str, from_node: str, to_node: str, message_id: str, creation_time: str, delivery_time: str) -> None:
+    def __init__(self, timestamp: float, from_node: str, to_node: str, message_id: str, creation_time: float, delivery_time: float) -> None:
         self.timestamp = timestamp
         self.from_node = from_node
         self.to_node = to_node
@@ -75,7 +76,7 @@ class TransmissionEvent:
     - action: C for created, S for sent, DE for delivery
     - extra: D for final delivery (transmission reached goal), or R for relayed (hop)
     """
-    def __init__(self, timestamp: str, from_node: str, message_id: str, action: str, to_node = "", extra = "") -> None:
+    def __init__(self, timestamp: float, from_node: str, message_id: str, action: str, to_node: str = "", extra: str = "") -> None:
         self.timestamp = timestamp
         self.from_node = from_node
         self.message_id = message_id
@@ -96,7 +97,7 @@ def get_host_id_from_host_name(node_name: str) -> str:
     splitted = node_name.split("_")
     return splitted[2]
 
-def load_distance_delay_data(file_path) -> list[Message]:
+def load_distance_delay_data(file_path: str) -> list[Message]:
     """
     Load distance delay report data
     Format: distance, delivery_time, hop_count, message_id
@@ -116,13 +117,13 @@ def load_distance_delay_data(file_path) -> list[Message]:
                 hop_count = int(parts[2])
                 message_id = parts[3]
                 
-                msg = Message(message_id, distance=distance, hop_count=hop_count, delivery_time=delivery_time, is_delivered=delivery_time == -1 or hop_count == -1)
+                msg = Message(message_id, distance=distance, hop_count=hop_count, delivery_time=delivery_time, is_delivered=delivery_time != -1 and hop_count != -1)
                 messages.append(msg)
             else:
                 print("Cannot load distance delay delay of line due to missing 4 parts, have {} parts:", line, len(parts))
     return messages
 
-def load_delivered_messages_data(file_path) -> dict[str, dict['size': int, 'hops': list[str]]]:
+def load_delivered_messages_data(file_path: str) -> dict[str, dict['size': int, 'hops': list[str]]]:
     """
     Load delivered messages report data
     Format: time, ID, size, hopcount, deliveryTime, fromHost, toHost, remainingTtl, isResponse, path
@@ -146,7 +147,7 @@ def load_delivered_messages_data(file_path) -> dict[str, dict['size': int, 'hops
                 print("Cannot load message delivery data line due to missing 3 parts, have {} parts:", line, len(parts))
     return message_sizes_and_hops
 
-def parse_message_transmission_line(line: str) -> TransmissionEvent:
+def parse_message_transmission_line(line: str) -> None|TransmissionEvent:
     """
     Parse a single line of message transmission data.
     
@@ -311,7 +312,7 @@ def get_neighbors_at_time_for_node(connectivity_state: dict[float, dict[str, dic
     valid_times = list(takewhile(lambda t: t <= target_time, connectivity_state.keys()))
 
     node_id = get_host_id_from_host_name(node_name)
-    neighbors = set()
+    neighbors: set[str] = set()
     for time in sorted(valid_times):
         connectivity_at_time = connectivity_state[time]
         if node_id in connectivity_at_time:
@@ -323,6 +324,96 @@ def get_neighbors_at_time_for_node(connectivity_state: dict[float, dict[str, dic
             neighbors -= connections_dropped_at_time
     
     return neighbors
+
+def load_all_created_messages(event_log_file: str, message_size: int, communication_range: float) -> list[Message]:
+    """
+    Load all created messages from EventLogReport, including undelivered ones.
+    
+    Args:
+        event_log_file: Path to EventLogReport.txt
+        message_size: Size of messages for this simulation
+        communication_range: Communication range for this simulation
+        
+    Returns:
+        List of all Message objects that were created
+    """
+    created_messages = []
+    
+    with open(event_log_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or 'CONN' in line:
+                continue
+                
+            parts = line.split()
+            if len(parts) >= 4 and parts[1] == 'C':  # Created message
+                timestamp = float(parts[0])
+                from_node = parts[2]
+                message_id = parts[3]
+                
+                # Create a basic message object for created messages
+                # We don't have distance/delivery info for undelivered messages  
+                msg = Message(message_id, distance=0, size=message_size, 
+                            communication_range=int(communication_range), delivery_time=0, hop_count=0)
+                msg.created_time = timestamp
+                msg.from_node = from_node
+                
+                created_messages.append(msg)
+    
+    return created_messages
+
+def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs=100, message_size: int = 247) -> tuple[list[Message], list[Message]]:
+    """
+    Combine data to get both all created messages and only delivered messages.
+    
+    Returns:
+        Tuple of (all_created_messages, delivered_messages)
+    """
+    all_created_messages: list[Message] = []
+    delivered_messages: list[Message] = []
+    
+    for range_suffix in range_suffixes:
+        print(f"Combining all messages for communication range {range_suffix}...")
+        
+        delivered_count = 0
+        created_count = 0
+        
+        for run in range(1, num_runs + 1):
+            distance_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DistanceDelayReport.txt"
+            delivered_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DeliveredMessagesReport.txt"
+            connectivity_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_ConnectivityONEReport.txt"
+            eventlog_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_EventLogReport.txt"
+            
+            # Load all created messages
+            created_messages_run = load_all_created_messages(eventlog_file, int(message_size), float(range_suffix))
+            for msg in created_messages_run:
+                msg.id = f"{msg.id}_run{run}_range{range_suffix}"
+                all_created_messages.append(msg)
+                created_count += 1
+            
+            # Load delivered messages (existing functionality)
+            distance_messages = load_distance_delay_data(distance_file)
+            message_sizes_and_hops = load_delivered_messages_data(delivered_file)
+
+            delivered_messages_with_hops = {}
+            for message_id in message_sizes_and_hops.keys(): 
+                delivered_messages_with_hops[message_id] = message_sizes_and_hops[message_id]['hops']
+            
+            message_node_degrees = load_transmission_data(eventlog_file, connectivity_file, delivered_messages_with_hops)
+            
+            for msg in distance_messages:
+                if msg.id in message_sizes_and_hops:
+                    msg.size = message_sizes_and_hops[msg.id]['size']
+                    msg.hops = message_node_degrees[msg.id].hops
+                    delivered_count += 1
+                    
+                    msg.communication_range = range_suffix
+                    msg.id = f"{msg.id}_run{run}_range{range_suffix}"
+                    delivered_messages.append(msg)  # Only add delivered messages
+        
+        print(f"Range {range_suffix}: {created_count} created, {delivered_count} delivered ({delivered_count/created_count*100:.1f}%)")
+
+    return all_created_messages, delivered_messages
 
 def load_transmission_data(event_log_file: str, connectivity_file: str, delivered_messages_with_hops: dict[str, set[str]]) -> dict[str, Transmission]:
     """
@@ -342,7 +433,7 @@ def load_transmission_data(event_log_file: str, connectivity_file: str, delivere
     
     return transmissions
 
-def split_unified_report(scenario_prefix, ranges, runs, message_size: str = "247"):
+def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, message_size: int = 247):
     # identifiers can be:
     # DD for distance delay
     # DM for delivered messages
@@ -380,32 +471,37 @@ def split_unified_report(scenario_prefix, ranges, runs, message_size: str = "247
                     else:
                         raise ValueError(f"got unexpected report identifier: {report_identifier}")
 
-
 def main():
-    DEFAULT_RANGES = ["12", "50", "120"]
+    DEFAULT_RANGES = [12, 50, 120]
     DEFAULT_NUM_RUNS = 50
     DEFAULT_SCENARIO_NAME = "GR"
-    DEFAULT_MESSAGE_SIZE = "247"
+    DEFAULT_MESSAGE_SIZE = 247
 
     parser = ArgumentParser(description="Combine reports generated from The ONE")
     parser.add_argument("--ranges", nargs="+", default=DEFAULT_RANGES, help="List of communication ranges to process. Default is " + str(DEFAULT_RANGES))
     parser.add_argument("--runs", type=int, default=DEFAULT_NUM_RUNS, help="Number of runs to process for each range. Default is " + str(DEFAULT_NUM_RUNS))
     parser.add_argument("--scenario-name", type=str, default="GR", help="Scenario name to process for the reports " + str(DEFAULT_SCENARIO_NAME))
-    parser.add_argument("--message-size", type=str, default=DEFAULT_MESSAGE_SIZE, help="Message size used in the simulation filenames. Default is " + str(DEFAULT_MESSAGE_SIZE))
+    parser.add_argument("--message-size", type=int, default=DEFAULT_MESSAGE_SIZE, help="Message size used in the simulation filenames. Default is " + str(DEFAULT_MESSAGE_SIZE))
 
     args = parser.parse_args()
-    ranges = args.ranges
-    runs = args.runs
-    scenario_prefix = args.scenario_name
-    message_size = args.message_size
+    ranges: list[int] = args.ranges
+    runs: int = args.runs
+    scenario_prefix: str = args.scenario_name
+    message_size: int = args.message_size
 
     print(f"Received ranges {ranges}, runs {runs}, and message size {message_size}")
 
     print("Splitting unified report data to individual reports...")
     split_unified_report(scenario_prefix, ranges, runs, message_size)
     
+    print("Combining all message data (including undelivered)...")
+    all_messages, delivered_messages = combine_all_message_data(scenario_prefix, ranges, runs, message_size)
+    print("All message data combined!")
     
-    with open("message.pkl", "wb") as f:
-        dump(messages, f)
+    with open("all_messages.pkl", "wb") as f:
+        dump(all_messages, f)
+        
+    with open("delivered_messages.pkl", "wb") as f:
+        dump(delivered_messages, f)
 if __name__ == "__main__":
     main()
