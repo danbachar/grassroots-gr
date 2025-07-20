@@ -4,6 +4,7 @@
  */
 package report;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -49,6 +50,12 @@ public abstract class Report {
 	 *  respective report classes for details. Default is 0. Must be a positive
 	 *  integer or 0. */
 	public static final String WARMUP_S = "warmup";
+	/** Buffer size for report writing -setting id ({@value}). Defines how many
+	 *  lines to buffer before writing to disk. Default is {@value #DEF_BUFFER_SIZE}.
+	 *  Setting this to 0 disables buffering. */
+	public static final String BUFFER_SIZE_SETTING = "bufferSize";
+	/** Default buffer size for report writing */
+	public static final int DEF_BUFFER_SIZE = 1000;
 	/** Suffix of report files without explicit output */
 	public static final String OUT_SUFFIX = ".txt";
 	/** Suffix for reports that are created on n second intervals */
@@ -61,6 +68,10 @@ public abstract class Report {
 	private int precision;
 	protected int warmupTime;
 	protected Set<String> warmupIDs;
+	
+	// Buffering variables
+	private final List<String> writeBuffer = new ArrayList<>();
+	private final int bufferSize;
 
 	private int lastOutputSuffix;
 	private double outputInterval;
@@ -105,6 +116,15 @@ public abstract class Report {
 		}
 		else {
 			precision = DEF_PRECISION;
+		}
+		
+		// Initialize buffer size
+		if (settings.contains(BUFFER_SIZE_SETTING)) {
+			int configuredBufferSize = settings.getInt(BUFFER_SIZE_SETTING);
+			bufferSize = Math.max(0, configuredBufferSize); // Ensure non-negative
+		}
+		else {
+			bufferSize = DEF_BUFFER_SIZE;
 		}
 
 		if (settings.contains(OUTPUT_SETTING)) {
@@ -187,12 +207,15 @@ public abstract class Report {
 	}
 
 	/**
-	 * Creates a new output file
+	 * Creates a new output file with buffered writing
 	 * @param outFileName Name (&path) of the file to create
 	 */
 	private void createOutput(String outFileName) {
 		try {
-			this.out = new PrintWriter(new FileWriter(outFileName));
+			// Use BufferedWriter for improved I/O performance
+			FileWriter fileWriter = new FileWriter(outFileName);
+			BufferedWriter bufferedWriter = new BufferedWriter(fileWriter, 8192); // 8KB buffer
+			this.out = new PrintWriter(bufferedWriter);
 		} catch (IOException e) {
 			throw new SimError("Couldn't open file '" + outFileName +
 					"' for report output\n" + e.getMessage(), e);
@@ -221,13 +244,14 @@ public abstract class Report {
 		}
 
 		if (getSimTime() > this.lastReportTime + this.outputInterval) {
+			flushBuffer(); // Flush buffer before switching files
 			done(); // finalize the old file
 			init(); // init the new file
 		}
 	}
 
 	/**
-	 * Writes a line to report using defined prefix and {@link #out} writer.
+	 * Writes a line to report using defined prefix and buffering for performance.
 	 * @param txt Line to write
 	 * @see #setPrefix(String)
 	 */
@@ -235,7 +259,42 @@ public abstract class Report {
 		if (out == null) {
 			init();
 		}
-		out.println(prefix + txt);
+		
+		String line = prefix + txt;
+		
+		if (bufferSize <= 0) {
+			// Buffering disabled, write directly
+			out.println(line);
+		} else {
+			// Add to buffer
+			writeBuffer.add(line);
+			
+			// Flush buffer when full
+			if (writeBuffer.size() >= bufferSize) {
+				flushBuffer();
+			}
+		}
+	}
+	
+	/**
+	 * Flushes the write buffer to disk
+	 */
+	private void flushBuffer() {
+		if (out != null && !writeBuffer.isEmpty()) {
+			for (String line : writeBuffer) {
+				out.println(line);
+			}
+			out.flush(); // Ensure data is written to disk
+			writeBuffer.clear();
+		}
+	}
+
+	/**
+	 * Manually flushes the write buffer. This can be called by subclasses
+	 * when they need to ensure data is written immediately (e.g., at critical points).
+	 */
+	protected void flush() {
+		flushBuffer();
 	}
 
 	/**
@@ -330,6 +389,9 @@ public abstract class Report {
 	 * that it's time for the next report.
 	 */
 	public void done() {
+		// Flush any remaining buffered data before closing
+		flushBuffer();
+		
 		if (out != null) {
 			out.close();
 		}
