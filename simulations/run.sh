@@ -104,6 +104,8 @@ run_simulation() {
     ./one.sh -b 1 \
         "$SCENARIO_NAME-settings-${size}-${run}-${range}.txt" \
         "$SCENARIO_NAME-comms-settings-${size}-${range}.txt"
+    rm "$SCENARIO_NAME-settings-${size}-${run}-${range}.txt" \
+        "$SCENARIO_NAME-comms-settings-${size}-${range}.txt"
     cd -
     
     echo "[$(date '+%H:%M:%S')] Completed simulation ${job_id}"
