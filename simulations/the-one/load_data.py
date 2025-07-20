@@ -336,74 +336,74 @@ def load_transmission_data(event_log_file: str, connectivity_file: str, delivere
     Returns:
         Dict of message ID to transmission
     """
-    print("Parsing connectivity report...")
     connectivity_by_time = parse_connectivity_report(connectivity_file)
     
-    print("Parsing message transmissions...")
     transmissions = parse_message_transmissions(event_log_file, delivered_messages_with_hops, connectivity_by_time)
-    
-    print(f"Processed {len(transmissions)} transmission events.")
     
     return transmissions
 
-def combine_message_data(scenario_prefix, size_suffixes, num_runs=100) -> list[Message]:
-    """
-    Combine data from different reports to create complete Message objects
-    Supports aggregating data from multiple simulation runs
-    """
-    
-    messages = []
-    for size_suffix in size_suffixes:
-        print(f"Combining messages of size {size_suffix}...")
-        
-        for run in range(1, num_runs + 1):
-            distance_file = f"reports_data/{scenario_prefix}_{size_suffix}_run{run}_DistanceDelayReport.txt"
-            delivered_file = f"reports_data/{scenario_prefix}_{size_suffix}_run{run}_DeliveredMessagesReport.txt"
-            connectivity_file = f"reports_data/{scenario_prefix}_{size_suffix}_run{run}_ConnectivityONEReport.txt"
-            eventlog_file = f"reports_data/{scenario_prefix}_{size_suffix}_run{run}_EventLogReport.txt"
-            
-            print(f"  Loading run {run}/{num_runs}...")
-            # We load distance delay data for distance, delivery_time, hop_count, message_id        
-            distance_messages = load_distance_delay_data(distance_file)
-            # We load delivered message data for size and hop paths
-            message_sizes_and_hops = load_delivered_messages_data(delivered_file)
+def split_unified_report(scenario_prefix, ranges, runs, message_size: str = "247"):
+    # identifiers can be:
+    # DD for distance delay
+    # DM for delivered messages
+    # EL for event log
+    # CO for connectivity ONE
+    distance_delay_row_identifier="DD"
+    delivered_messages_row_identifier="DM"
+    connectivity_row_identifier="CO"
+    event_log_row_identifier="EL"
 
-            delivered_messages_with_hops = {}
-            for message_id in message_sizes_and_hops.keys(): 
-                delivered_messages_with_hops[message_id] = message_sizes_and_hops[message_id]['hops'] # TODO: need to map name to id?
-            message_node_degrees = load_transmission_data(eventlog_file, connectivity_file, delivered_messages_with_hops)
-            for msg in distance_messages:
-                if msg.id in message_sizes_and_hops:
-                    msg.size = message_sizes_and_hops[msg.id]['size']
-                    msg.hops = message_node_degrees[msg.id].hops
-                
-                # Add run identifier to message id to avoid conflicts
-                msg.id = f"{msg.id}_run{run}_{msg.size}"
-                
-                messages.append(msg)
-                        
-    return messages
+    for range_suffix in ranges:        
+        for run in range(1, runs + 1):
+            distance_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DistanceDelayReport.txt"
+            delivered_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DeliveredMessagesReport.txt"
+            connectivity_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_ConnectivityONEReport.txt"
+            eventlog_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_EventLogReport.txt"
+            unified_report_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_UnifiedReport.txt"
+            
+            with open(unified_report_file_path, "r") as unified_report_file, open(distance_file_path, "w") as distance_file,  open(delivered_file_path, "w") as delivered_file, open(connectivity_file_path, "w") as connectivity_file, open(eventlog_file_path, "w") as eventlog_file:
+                for line in unified_report_file:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    report_identifier, line = line.split(": ")
+
+                    if report_identifier == distance_delay_row_identifier:
+                        distance_file.write(line + "\n")
+                    elif report_identifier == delivered_messages_row_identifier:
+                        delivered_file.write(line + "\n")
+                    elif report_identifier == connectivity_row_identifier:
+                        connectivity_file.write(line + "\n")
+                    elif report_identifier == event_log_row_identifier:
+                        eventlog_file.write(line + "\n")
+                    else:
+                        raise ValueError(f"got unexpected report identifier: {report_identifier}")
+
 
 def main():
-    DEFAULT_SIZE_SUFFIXES = ["100","1000","10000","100000","1000000","5000000"]
+    DEFAULT_RANGES = ["12", "50", "120"]
     DEFAULT_NUM_RUNS = 50
-    DEFAULT_SCENARIO_NAME = "ER"
+    DEFAULT_SCENARIO_NAME = "GR"
+    DEFAULT_MESSAGE_SIZE = "247"
 
     parser = ArgumentParser(description="Combine reports generated from The ONE")
-    parser.add_argument("--sizes", nargs="+", default=DEFAULT_SIZE_SUFFIXES, help="List of message sizes to process. Default is " + str(DEFAULT_SIZE_SUFFIXES))
-    parser.add_argument("--runs", type=int, default=DEFAULT_NUM_RUNS, help="Number of runs to process for each size. Default is " + str(DEFAULT_NUM_RUNS))
-    parser.add_argument("--scenario-name", type=str, default="ER", help="Scenario name to process for the reports " + str(DEFAULT_SCENARIO_NAME))
+    parser.add_argument("--ranges", nargs="+", default=DEFAULT_RANGES, help="List of communication ranges to process. Default is " + str(DEFAULT_RANGES))
+    parser.add_argument("--runs", type=int, default=DEFAULT_NUM_RUNS, help="Number of runs to process for each range. Default is " + str(DEFAULT_NUM_RUNS))
+    parser.add_argument("--scenario-name", type=str, default="GR", help="Scenario name to process for the reports " + str(DEFAULT_SCENARIO_NAME))
+    parser.add_argument("--message-size", type=str, default=DEFAULT_MESSAGE_SIZE, help="Message size used in the simulation filenames. Default is " + str(DEFAULT_MESSAGE_SIZE))
 
     args = parser.parse_args()
-    sizes = args.sizes
+    ranges = args.ranges
     runs = args.runs
     scenario_prefix = args.scenario_name
+    message_size = args.message_size
 
-    print(f"Received sizes {sizes}, and runs {runs}")
+    print(f"Received ranges {ranges}, runs {runs}, and message size {message_size}")
 
-    print("Combining message data...")
-    messages = combine_message_data(scenario_prefix, sizes, runs)
-    print("Message data combined!")
+    print("Splitting unified report data to individual reports...")
+    split_unified_report(scenario_prefix, ranges, runs, message_size)
+    
     
     with open("message.pkl", "wb") as f:
         dump(messages, f)
