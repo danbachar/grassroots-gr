@@ -90,7 +90,7 @@ public class LimitedMTUConnection extends Connection {
 		// send as many chunks as possible within limit: if cannot send all chunks try sending the last (smaller due to division rest) chunk
 		// chunk sending order does not matter as we are only interested in the theoretical limit
 		int chunksTaken;
-		for (chunksTaken=0; chunksTaken<this.fullSizeChunkCount && total <= theoreticalNumberOfSendableBytesSinceLastUpdate; chunksTaken++) {
+		for (chunksTaken=0; chunksTaken<this.fullSizeChunkCount && (total + PATH_MTU <= theoreticalNumberOfSendableBytesSinceLastUpdate); chunksTaken++) {
 			total += PATH_MTU;
 		}
 		this.fullSizeChunkCount -= chunksTaken;
