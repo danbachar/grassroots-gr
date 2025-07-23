@@ -1,18 +1,18 @@
-## Scenario settings
-Scenario.name = ErdosRenyiScenario
+Scenario.name = GRScenario
 Scenario.simulateConnections = true
 Scenario.updateInterval = 1
 Scenario.endTime = 7200
 
-# Reports
-Report.nrofReports = 1
+Report.nrofReports = 2
 Report.report1 = UnifiedReport
+Report.report2 = AdjacencyMatrixReport
 Report.reportDir=reports_data
-Report.xCount = 500
-Report.yCount = 500
+Report.xCount = 250
+Report.yCount = 250
 Report.bufferSize = 20000
+AdjacencyMatrixReport.granularity = 10
 
-MovementModel.worldSize = 500, 500
+MovementModel.worldSize = 250, 250
 MovementModel.warmup = 0
 MovementModel.rngSeed = 1
 
@@ -20,7 +20,7 @@ MovementModel.rngSeed = 1
 Scenario.nrofHostGroups = 1
 
 Group1.groupID = random_stationary_
-Group1.nrofHosts = 10
+Group1.nrofHosts = 25
 Group1.movementModel = RandomStationaryConstrained
 Group1.offsetX = 50
 Group1.offsetY = 50
@@ -29,7 +29,6 @@ Group1.speed = 0, 0
 Group1.nrofInterfaces = 1
 Group1.interface1 = bluetoothInterface
 
-## GUI settings with background map
 GUI.UnderlayImage.fileName = data/hall.png
 GUI.UnderlayImage.offset = 0,0
 GUI.UnderlayImage.scale = 1.0

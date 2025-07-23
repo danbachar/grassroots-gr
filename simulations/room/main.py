@@ -24,8 +24,8 @@ if __name__ == "__main__":
     
     # hardcoded for now
     hall_points = [
-        (0, 0), (400, 0), (400, 400),
-        (200, 400), (200, 200), (0, 200)
+        (0, 0), (200, 0), (200, 200),
+        (100, 200), (100, 100), (0, 100)
     ]
 
     # adjust for offset
@@ -36,8 +36,7 @@ if __name__ == "__main__":
     
     rooms = {"hall": hall}
     
-    # Generate map visualization
     Room.draw_map(rooms, output_path=data_dir / "hall.png", 
-                  image_width=500, image_height=500, scale=scale,
+                  image_width=250, image_height=250, scale=scale,
                   x_offset=x_offset, y_offset=y_offset)
     

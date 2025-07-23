@@ -8,12 +8,14 @@ DEFAULT_SIZES=(247)
 SCENARIO_NAME="GR"
 DEFAULT_TOTAL_HOSTS=50
 DEFAULT_RANGES=(120)
+DEFAULT_START=1
 
 print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
     echo "  -j, --jobs NUM         Maximum number of parallel jobs (default: $DEFAULT_MAX_PARALLEL_JOBS)"
     echo "  -n, --num NUM          Number of runs per size (default: $DEFAULT_NUM_RUNS)"
+    echo "  -start NUM             Run number to start from (default: $DEFAULT_START)"
     echo "  -r, --ranges RANGE...  Space-separated list of ranges (default: ${DEFAULT_RANGES[*]})"
     echo "  -s, --sizes SIZE...    Space-separated list of message sizes (default: ${DEFAULT_SIZES[*]})"
     echo "  -t, --total-hosts NUM  Total number of nodes in the simulation (default: $DEFAULT_TOTAL_HOSTS)"
@@ -33,6 +35,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n|--num)
             NUM_RUNS="$2"
+            shift 2
+            ;;
+        -start)
+            START_RUN="$2"
             shift 2
             ;;
         -s|--sizes)
@@ -76,9 +82,12 @@ if [ ${#RANGES[@]} -eq 0 ]; then
     RANGES=("${DEFAULT_RANGES[@]}")
 fi
 TOTAL_HOSTS=${TOTAL_HOSTS:-$DEFAULT_TOTAL_HOSTS}
+START_RUN=${START_RUN:-$DEFAULT_START}
+
 echo "Configuration:"
 echo "  Maximum parallel jobs: $MAX_PARALLEL_JOBS"
 echo "  Number of runs: $NUM_RUNS"
+echo "  Starting run number: $START_RUN"
 echo "  Total number of hosts: $TOTAL_HOSTS"
 echo "  Message sizes: [$(IFS=', '; echo "${SIZES[*]}")]"
 echo "  Interface ranges: [$(IFS=', '; echo "${RANGES[*]}")]"
@@ -101,10 +110,8 @@ run_simulation() {
     echo "[$(date '+%H:%M:%S')] Starting simulation ${job_id}"
 
     cd the-one
-    ./one.sh -b 1 \
+    ./one.sh \
         "$SCENARIO_NAME-settings-${size}-${run}-${range}.txt" \
-        "$SCENARIO_NAME-comms-settings-${size}-${range}.txt"
-    rm "$SCENARIO_NAME-settings-${size}-${run}-${range}.txt" \
         "$SCENARIO_NAME-comms-settings-${size}-${range}.txt"
     cd -
     
@@ -127,7 +134,7 @@ prepare_config_files() {
     sed -i -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_HOSTS/" \
                 the-one/$SCENARIO_NAME-settings.txt
     for size in "${SIZES[@]}"; do
-        for run in $(seq 1 $NUM_RUNS); do
+        for run in $(seq $START_RUN $NUM_RUNS); do
             for range in "${RANGES[@]}"; do
                 RANDOM_SEED=$((size+run*100+range*1000))
                 sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_${size}_run${run}_range${range}/" \
@@ -160,7 +167,7 @@ run_simulations() {
     for size in "${SIZES[@]}"; do
         for range in "${RANGES[@]}"; do
             echo "Scheduling simulations for message size: $size, communication radius: $range"
-            for run in $(seq 1 $NUM_RUNS); do
+            for run in $(seq $START_RUN $NUM_RUNS); do
                 wait_for_jobs $MAX_PARALLEL_JOBS
                 run_simulation $size $run $range &
 
