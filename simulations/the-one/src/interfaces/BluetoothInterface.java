@@ -197,12 +197,11 @@ class BluetoothLEBitrateCalculator {
 
     // Constants
     public static final double BANDWIDTH_HZ = 1_000_000.0; // 1 MHz channel bandwidth
-    public static final double BITS_IN_SYMBOL = 8; // 8 bits per symbol (1 byte)
     public static final double TX_POWER_DBM = 0.0; // Transmit power in dBm
     public static final double PATH_LOSS_EXPONENT = 2.0; // Free space exponent
     public static final double REFERENCE_DISTANCE_M = 1.0; // Reference distance d0 in meters
     public static final double PATH_LOSS_AT_REF_DB = 40.0; // Empirical PL(d0) at 1m for 2.4 GHz
-    public static final double NOISE_FLOOR_DBM = -114.0; // Noise floor (dBm) at 1 MHz BW
+    public static final double NOISE_FLOOR_DBM = -85.0; // Noise floor (dBm) at 1 MHz BW
 
     // Gaussian shadowing (optional, set to 0.0 if not needed)
     public static final double SHADOWING_DB = 0.0;
@@ -223,20 +222,25 @@ class BluetoothLEBitrateCalculator {
         return Math.pow(10.0, snr_dB / 10.0); // Convert from dB to linear
     }
 
-    // Compute bitrate using Shannon capacity (bps), capped at 1 Mbps
+    // Compute bitrate using Shannon capacity (bps)
     public static double getBitrateBps(double distanceMeters) {
         double snr = getSNR(distanceMeters);
-        double capacity = BANDWIDTH_HZ * Math.log(1 + snr) / Math.log(BITS_IN_SYMBOL); // Shannon capacity
-        double distanceRatio = Math.min(REFERENCE_DISTANCE_M / distanceMeters, 1.0); // adjust capacity based on 1 Mb/s
-                                                                                     // at 1m reference distance for
-                                                                                     // BLE 1M PHY
-        capacity *= distanceRatio;
-        return capacity;
+        // Shannon capacity: C = B * log2(1 + SNR)
+        double capacity = BANDWIDTH_HZ * Math.log(1 + snr) / Math.log(2.0); // Shannon capacity in bps
+
+        // Scale the capacity to ensure 1 Mbit/s at reference distance (1 meter)
+        double snrAtRef = getSNR(REFERENCE_DISTANCE_M);
+        double capacityAtRef = BANDWIDTH_HZ * Math.log(1 + snrAtRef) / Math.log(2.0);
+        double scalingFactor = 1_000_000.0 / capacityAtRef; // Scale to get 1 Mbit/s at 1m
+
+        double scaledCapacity = capacity * scalingFactor;
+
+        // Avoid exceeding realistic BLE limits
+        return Math.min(scaledCapacity, 1_000_000.0);
     }
 
-    // Convenience: convert to kilobytes per second
     public static double getBitrateKiloBytesPerSec(double distanceMeters) {
-        return getBitrateBps(distanceMeters) / 8.0 / 1000.0;
+        return (getBitrateBps(distanceMeters) / 8.0) / 1000.0;
     }
 
     public static void main(String[] args) {
