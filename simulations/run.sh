@@ -110,7 +110,7 @@ run_simulation() {
     echo "[$(date '+%H:%M:%S')] Starting simulation ${job_id}"
 
     cd the-one
-    ./one.sh \
+    ./one.sh -b 1  \
         "$SCENARIO_NAME-settings-${size}-${run}-${range}.txt" \
         "$SCENARIO_NAME-comms-settings-${size}-${range}.txt"
     cd -
