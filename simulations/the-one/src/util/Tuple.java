@@ -38,6 +38,22 @@ public class Tuple<K,V>  {
 	}
 
 	/**
+	 * Set the key
+	 * @return void
+	 */
+	public void setKey(K key) {
+		this.key = key;
+	}
+
+	/**
+	 * Set the value
+	 * @return void
+	 */
+	public void setValue(V value) {
+		this.value = value;
+	}
+
+	/**
 	 * Returns a string representation of the tuple
 	 * @return a string representation of the tuple
 	 */

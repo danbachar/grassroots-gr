@@ -187,8 +187,6 @@ public class MessageEventGenerator implements EventQueue {
 	 */
 	public ExternalEvent nextEvent() {
 		int responseSize = 0; /* zero stands for one way messages */
-		int msgSize;
-		int interval;
 		int from;
 		int to;
 
@@ -196,6 +194,12 @@ public class MessageEventGenerator implements EventQueue {
 		from = drawHostAddress(this.hostRange);
 		to = drawToAddress(hostRange, from);
 
+		return getMessageCreateEvent(from, to, responseSize);
+	}
+
+	private MessageCreateEvent getMessageCreateEvent(int from, int to, int responseSize) {
+		int msgSize;
+		int interval;
 		msgSize = drawMessageSize();
 		interval = drawNextEventTimeDiff();
 

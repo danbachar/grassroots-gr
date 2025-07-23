@@ -26,6 +26,8 @@ public class DTNSimGUI extends DTNSimUI {
 	private EventLogPanel eventLogPanel;
 	private InfoPanel infoPanel;
 
+	private static DTNSimGUI instance;
+
 	private void startGUI() {
 		try {
 			SwingUtilities.invokeAndWait(new Runnable() {
@@ -86,6 +88,8 @@ public class DTNSimGUI extends DTNSimUI {
 		});
 
 		this.main.setVisible(true);
+
+		instance = this;
 	}
 
 	@Override
@@ -163,7 +167,10 @@ public class DTNSimGUI extends DTNSimUI {
 		}
 	}
 
-
+	public static void cancelSim() {
+		instance.simDone = true;
+		instance.closeSim();
+	}
 
 	/**
 	 * Closes the program if simulation is done or cancels it.
