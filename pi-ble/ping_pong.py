@@ -677,36 +677,7 @@ class ThroughputTestPeer:
             logger.debug(f"⚠️ No data messages received during test duration")
             if num_retries > 0:
                 logger.debug(f"{num_retries} attempts left at protocol recovery...")
-                # Attempt to recover based on node role
-                if self.should_send_ping:
-                    # We're supposed to be the sender, try sending RTS again
-                    logger.debug(f"🔄 Resending RTS as sender node...")
-                    self.send_rts()
-                    
-                    # Wait a bit more for response
-                    recovery_wait = min(5.0, self.test_duration * 0.1)  # 10% of test duration, max 5s
-                    got_data_after_rts = await event_wait(self.got_data_message, recovery_wait)
-                    if not got_data_after_rts:
-                        logger.debug(f"❌ Protocol recovery failed - no response to RTS")
-                        # TODO: skip run?
-                        # Continue with the run anyway to collect any partial data
-                    else:
-                        logger.debug(f"✅ Protocol recovery successful after RTS")
-                        asyncio.create_task(self.start_ping_sequence())
-                else:
-                    # We're supposed to be the responder, try sending CTS again
-                    logger.debug(f"🔄 Resending CTS as responder node...")
-                    self.send_cts()
-                    
-                    # Wait a bit more for PING messages
-                    recovery_wait = min(5.0, self.test_duration * 0.1)  # 10% of test duration, max 5s
-                    got_data_after_cts = await event_wait(self.got_data_message, recovery_wait)
-                    if not got_data_after_cts:
-                        logger.debug(f"❌ Protocol recovery failed - no PING messages received after CTS")
-                        # TODO: skip run?
-                        # # Continue with the run anyway to collect any partial data
-                    else:
-                        logger.debug(f"✅ Protocol recovery successful after CTS")
+                await self.perform_run(run_number, num_retries - 1)
 
         await asyncio.sleep(self.test_duration)
         self.test_active = False
