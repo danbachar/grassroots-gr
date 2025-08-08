@@ -10,6 +10,7 @@ import argparse
 import os
 from re import findall
 from contextlib import suppress
+from types import CoroutineType
 from typing import Any, Optional
 from enum import Enum
 from bless import (
@@ -59,7 +60,6 @@ class Message:
         self.data_content = data_content
         self.size = size if size != 0 else len(self.__str__())
         self.incoming = incoming
-        # self.receive_timestamp_ms = receive_timestamp_ms
 
     def __str__(self):
         message = f"[{self.id}][{self.msg_type.value}][{self.data_content}]"
@@ -104,23 +104,30 @@ class ThroughputTestPeer:
         self.received_messages_count = 0
         self.test_active = False
         self.experiment_active = True
-        # self.got_control_message = False
         
         # RTS/CTS Protocol state
         self.clear_to_send = False
         self.should_send_ping = True  # This node wants to be sender initially
         
-        self.incoming_message_processor_task: asyncio.Task[None] = asyncio.create_task(self.process_incoming_message_queue())
+        # Thread synchronization
+        self._state_lock = threading.Lock()  # Protects protocol state and counters
+
+        self.main_loop: Optional[asyncio.AbstractEventLoop] = None
+        
+        self.incoming_message_processor_thread: threading.Thread = threading.Thread(
+                target=self.process_incoming_messages_queue,
+                daemon=True,
+                name="IncomingMessageProcessor"
+            )
         self.outgoing_message_sender_thread: threading.Thread = threading.Thread(
                 target=self.process_outgoing_messages_queue,
                 daemon=True,
                 name="OutgoingMessageSender"
             )
-        self.event_loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
 
         self.active_connections: dict[str, ConnectedPeer] = {}
         
-        self.incoming_message_queue: asyncio.Queue[Message] = asyncio.Queue()
+        self.incoming_message_queue: queue.Queue[Message] = queue.Queue()
         self.outgoing_message_queue: queue.Queue[Message] = queue.Queue()
         
         self.trusted_pattern = "PiChat-"
@@ -151,8 +158,8 @@ class ThroughputTestPeer:
 
     def create_outgoing_message(self, msg_type: MESSAGE_TYPE = MESSAGE_TYPE.DATA, data_content: str="") -> Message:
         """Create a message with format: [M_ID][MSG_TYPE][DATA_CONTENT]"""
-        msg_id = f"{self.peer_name}_M_{self.sent_messages_count}"
-        self.sent_messages_count += 1
+        with self._state_lock:
+            msg_id = f"{self.peer_name}_M_{self.sent_messages_count}"
 
         creation_timestamp_ms = int(time.time() * 1000)
         return Message(msg_id, creation_timestamp_ms, msg_type, data_content, self.message_size, False)
@@ -173,7 +180,12 @@ class ThroughputTestPeer:
         """Parse message to extract message_id, msg_type, and data_content"""
         try:
             # Expect format: [M_PEERID_MSGID][MSG_TYPE][DATA_CONTENT]
-            msg_id, msg_type, data_content = findall(r'\[(\w*)\]', message)
+            # [gr2M_0][DATA][PING111111]
+            matches = findall(r'\[(\w*)\]', message)
+            if len(matches) != 3:
+                logger.error(f"Invalid message format: {message}")
+                return None
+            msg_id, msg_type, data_content = matches
             if not MESSAGE_TYPE.is_message_type(msg_type):
                 logger.error(f"Unknown message type: {msg_type}")
                 return None
@@ -212,7 +224,7 @@ class ThroughputTestPeer:
 
                 f.writelines(buffer)
 
-            logger.debug(f"📝 Flushed {len(buffer)} log entries to {log_filename}")
+            logger.info(f"📝 Flushed {len(buffer)} log entries to {log_filename}")
             buffer.clear()
             
         except Exception as e:
@@ -252,26 +264,26 @@ class ThroughputTestPeer:
                 print(f"❌ Received a message we couldn't parse: {message_decoded}")
                 return
 
-            try:
-                if not self.is_own_message(message):
+            if not self.is_own_message(message):
+                if self.got_data_message.is_set() and self.got_control_message.is_set():
+                    try:
+                        self.incoming_message_queue.put_nowait(message)
+                    except queue.Full:
+                        # TODO: handle full queue
+                        # process_message(message, characteristic) # process message immediately if queue is full
+                        raise(ValueError("Message queue is full, cannot add new message"))
+                else:
                     if message.msg_type == MESSAGE_TYPE.CTS or message.msg_type == MESSAGE_TYPE.RTS:
                         # TODO: why does the message queue keep getting items after it was emptied from the previous run?
                         if not self.got_control_message.is_set():
+                            # print(f"🔔 Setting got_control_message event at {time.time():.3f}")
                             self.got_control_message.set()
-                            self.process_message(message) # process first control or data message immediately for the control loop
-                        else:
-                            self.incoming_message_queue.put_nowait(message)
 
                     elif message.msg_type == MESSAGE_TYPE.DATA:
                         if not self.got_data_message.is_set():
+                            # print(f"🔔 Setting got_data_message event at {time.time():.3f}")
                             self.got_data_message.set()
-                            self.process_message(message) # process first control or data message immediately for the control loop
-                        else:
-                            self.incoming_message_queue.put_nowait(message)
-            except asyncio.QueueFull:
-                # TODO: handle full queue
-                # process_message(message, characteristic) # process message immediately if queue is full
-                raise(ValueError("Message queue is full, cannot add new message"))
+                    self.process_message(message) # process first control or data messages immediately for the control loop
             
         except Exception as e:
             logger.error(f"Error processing message: {e}")
@@ -282,14 +294,15 @@ class ThroughputTestPeer:
         try:
             if characteristic.uuid.lower() == self.STATUS_CHAR_UUID.lower():
                 # Return status information as JSON
-                status_info: dict[str, str|int] = {
-                    "device_name": self.device_name,
-                    "test_active": self.test_active,
-                    "experiment_active": self.experiment_active,
-                    "should_send_ping": self.should_send_ping,
-                    "clear_to_send": self.clear_to_send,
-                    "message_count": self.sent_messages_count
-                }
+                with self._state_lock:
+                    status_info: dict[str, str|int] = {
+                        "device_name": self.device_name,
+                        "test_active": self.test_active,
+                        "experiment_active": self.experiment_active,
+                        "should_send_ping": self.should_send_ping,
+                        "clear_to_send": self.clear_to_send,
+                        "message_count": self.sent_messages_count
+                    }
                 status_json = str(status_info).encode('utf-8')
                 return bytearray(status_json)
             else:
@@ -308,7 +321,6 @@ class ThroughputTestPeer:
         try:
             cts_message = self.create_cts_message()
             self.outgoing_message_queue.put_nowait(cts_message)
-            print(f"🟢 Queued CTS message")
         except Exception as e:
             logger.error(f"Error queueing CTS response: {e}")
     
@@ -321,97 +333,112 @@ class ThroughputTestPeer:
         try:
             rts_message = self.create_rts_message()
             self.outgoing_message_queue.put_nowait(rts_message)
-            print(f"🟢 Queued RTS message")
+            print(f"🟢 Queued RTS message {rts_message.id} at {time.time():.3f}")
         except Exception as e:
             logger.error(f"Error queueing RTS: {e}")
     
-    async def start_ping_sequence(self): # TODO: accept pong partner
+    def start_ping_sequence(self): # TODO: accept pong partner
         """Start sending PING messages continuously after becoming the PING sender"""
         try:
-            while not self.clear_to_send and self.should_send_ping:
-                # TODO: actually should not happen, refactor: remove sleep, async-await
-                await asyncio.sleep(self.inner_frame_time_us / 1e6)
-            
-            if not self.should_send_ping:
-                print(f"🔴 Node role changed to responder, stopping PING sequence")
-                return
-            print(f"🟢 Clear to send, starting PING sequence")
+            # while not self.clear_to_send and self.should_send_ping:
+            #     # TODO: actually should not happen, refactor: remove sleep, async-await
+            #     await asyncio.sleep(self.inner_frame_time_us / 1e6)
+            with self._state_lock:
+                if not self.should_send_ping:
+                    logger.info(f"🔴 Node role changed to responder, stopping PING sequence")
+                    return
+    
             while self.test_active and self.should_send_ping:
+                    
+                # ping_messages = [self.create_ping_message() for _ in range(10)]
+                # for ping_message in ping_messages:
                 ping_message = self.create_ping_message()
                 self.outgoing_message_queue.put_nowait(ping_message)
-                await asyncio.sleep(0) # TODO: needed? relinquish control
+                time.sleep(self.inner_frame_time_us / 1e6)
         except Exception as e:
             logger.error(f"Error in start_ping_sequence: {e}")
 
     def send_pong_response(self):
+        pong_message = self.create_pong_message()
         try:
-            pong_message = self.create_pong_message()
             self.outgoing_message_queue.put_nowait(pong_message)
-        except Exception as e:
-            logger.error(f"Error scheduling PONG response: {e}")
+        except queue.Full:
+            # TODO: handle full queue
+            raise(ValueError("Message queue is full, cannot add pong"))
 
     def process_outgoing_messages_queue(self):
         """
         Thread-based outgoing message processor with precise IFS timing.
         This function runs in a separate thread and handles sending outgoing messages every IFS.
         """
+        sent_first_data = False
+
+        if not self.main_loop:
+            logger.error("❌ Main event loop is not set, cannot start outgoing message sender thread")
+            return
+        
+        while len(self.active_connections.keys()) == 0:
+            logger.error("❌ No active connections to send messages to")
+            time.sleep(1)
+
+        
+        first_key = next(iter(self.active_connections))
+        connected_peer = self.active_connections[first_key]
+
         while self.experiment_active:
-            try:
-                # Wait for message with precise timeout (4.5μs)
-                message = self.outgoing_message_queue.get(
-                    timeout=self.inner_frame_time_us / 1e6
-                )
+            try:                
+                if self.outgoing_message_queue.empty():
+                    continue
+
+                message = self.outgoing_message_queue.get(timeout=self.inner_frame_time_us / 1e6)
+                
+                # request response for control messages, or for the first data message
+                should_send_response = False
+                if message.msg_type != MESSAGE_TYPE.DATA or not sent_first_data:
+                    should_send_response = True
+
                 self.log_message(message)
-                if message.msg_type != MESSAGE_TYPE.DATA or self.sent_messages_count % 100 == 0:
-                    print(f"🚀 Sending outgoing message #{self.sent_messages_count}: {message.msg_type.value}")
+
+                success: bool = asyncio.run_coroutine_threadsafe(self.send_message_to_peer(connected_peer, message, response=should_send_response), self.main_loop).result()
+                if not success:
+                    logger.error(f"Failed to send message {message.id} to {connected_peer.name}")
+                    self.experiment_active = False
+                    break
+                else:
+                    if message.msg_type == MESSAGE_TYPE.DATA and not sent_first_data:
+                        sent_first_data = True
+                    with self._state_lock:
+                        self.sent_messages_count += 1
                 
-                count_msgs_sent = asyncio.run_coroutine_threadsafe(
-                    self.broadcast_message(message), 
-                    self.event_loop
-                ).result()
-                if count_msgs_sent != 1:
-                    logger.debug(f"Should have sent 1 messsage, but sent {count_msgs_sent}")
-                
-                self.outgoing_message_queue.task_done() # mark task as done to dequeue it
-                
-            except queue.Empty:
-                # No message to send within timeout period
-                continue
             except Exception as e:
-                logger.error(f"Error in threaded outgoing message processing: {e}")
+                logger.error(f"Error in outgoing message processing: {e}")
                 has_active_connections = len(list(filter(lambda p: p.client.is_connected, self.active_connections.values()))) > 0
                 if not has_active_connections:
                     self.experiment_active = False
                     print("❌ No active connections, stopping outgoing message sender thread")
                     break
+                    
+        with self._state_lock:
+            final_sent_count = self.sent_messages_count
+        print(f"🛑 Stopped threaded outgoing message sender (sent {final_sent_count} messages)")
 
-        print(f"🛑 Stopped threaded outgoing message sender (sent {self.sent_messages_count} messages)")
-
-    async def process_incoming_message_queue(self):
+    def process_incoming_messages_queue(self):
         """
-        Process messages from the queue asynchronously without blocking.
+        Process messages from the queue in a separate thread without blocking.
         This function runs in the background and handles incoming messages as they arrive.
         """
-        
-        message_count = 0
+
         while self.experiment_active:
-            try:
-                # Wait for a message with a timeout to allow periodic checking of experiment_active
-                message = await asyncio.wait_for(
-                    self.incoming_message_queue.get(), 
-                    timeout=self.inner_frame_time_us / 1e6
-                )
-                message_count += 1
-                self.process_message(message)
-                
-            except asyncio.TimeoutError:
-                # No message received in timeout period, continue loop
+            if self.incoming_message_queue.empty():
                 continue
-            except Exception as e:
-                logger.error(f"Error in continuous message processing: {e}")
-                raise(ValueError("Error in message processing"))
+            message = self.incoming_message_queue.get(timeout=self.inner_frame_time_us / 1e6)
+
+            with self._state_lock:
+                self.received_messages_count += 1
+            self.process_message(message)
+
+            self.log_message(message)
         
-        print(f"🛑 Stopped continuous message processor (processed {message_count} messages)")
 
     def process_message(self, message: Message):
         """
@@ -421,15 +448,17 @@ class ThroughputTestPeer:
             message: The message to process
         """
         try:
-            self.received_messages_count += 1
-            once = False
+            with self._state_lock:
+                self.received_messages_count += 1
+
+            logger.info(f"📥 Processing message {message} at {time.time():.3f}")
                 
             if message.msg_type == MESSAGE_TYPE.RTS:
                 self.handle_rts_message(message)
             elif message.msg_type == MESSAGE_TYPE.CTS:
                 self.handle_cts_message(message)
             elif message.msg_type == MESSAGE_TYPE.DATA:
-                once = self.handle_data_message(message, once=once)
+                self.handle_data_message(message)
             else:
                 logger.warning(f"Unknown message type: {message.msg_type}")
                 
@@ -438,41 +467,42 @@ class ThroughputTestPeer:
 
     def handle_rts_message(self, message: Message):
         """Handle RTS (Request To Send) messages"""
-        self.should_send_ping = False
-        self.clear_to_send = False
+        # print(f"📨 Received RTS from {message.id} at {time.time():.3f}")
+        with self._state_lock:
+            self.should_send_ping = False
+            self.clear_to_send = False
         self.send_cts()
 
     def handle_cts_message(self, message: Message):
         """Handle CTS (Clear To Send) messages"""
-        self.clear_to_send = True
+        # print(f"📨 Received CTS from {message.id} at {time.time():.3f}")
 
-    def handle_data_message(self, message: Message, once: bool = False):
+        with self._state_lock:
+            self.clear_to_send = True
+
+    def handle_data_message(self, message: Message):
         """Handle DATA messages (PING/PONG)"""        
         if self.test_active:
             self.log_message(message)
-            if message.data_content.startswith("PING"):
-                # pong_message = self.create_pong_message()
-                # self.outgoing_message_queue.put_nowait(pong_message)
-                if once: 
-                    self.send_pong_response()
-                    return True
-            elif message.data_content.startswith("PONG"):
-                pass # don't do anything
-            else:
+            if message.msg_type is not MESSAGE_TYPE.DATA and message.msg_type is not MESSAGE_TYPE.RTS and message.msg_type is not MESSAGE_TYPE.CTS:
                 logger.warning(f"Received unknown DATA message content: {message.data_content}")
-        return False
+            # if message.data_content.startswith("PING"):
+            #     self.send_pong_response()
+            # elif message.data_content.startswith("PONG"):
+            #     pass # don't do anything
+        # return False
         
     async def start_server(self):
         """Start GATT server"""
         
-        self.server = BlessServer(name=self.device_name, loop=asyncio.get_event_loop())
+        self.server = BlessServer(name=self.device_name, loop=self.main_loop)
         self.got_control_message = asyncio.Event()
         self.got_data_message = asyncio.Event()
         self.server.read_request_func = self.read_request
         self.server.write_request_func = self.handle_peer_message
         
         await self.server.add_new_service(self.SERVICE_UUID)
-        
+
         # Add message characteristic (write)
         await self.server.add_new_characteristic(
             self.SERVICE_UUID,
@@ -492,11 +522,11 @@ class ThroughputTestPeer:
         )
         
         await self.server.start()
-        print(f"✅ GATT server '{self.device_name}' started!")
+        logger.info(f"✅ GATT server '{self.device_name}' started!")
         
         return self.server
     
-    async def discover_peers(self, scan_duration: int = 15, max_discovery_retries: int = 3) -> list[Peer]:
+    async def discover_peers(self, scan_duration: int = 5, max_discovery_retries: int = 3) -> list[Peer]:
         """Discover trusted peer devices, with retries and HCI reset on failure"""
 
         peers: list[Peer] = []
@@ -518,19 +548,19 @@ class ThroughputTestPeer:
                         if self.SERVICE_UUID.lower() in [uuid.lower() for uuid in advertisement_data.service_uuids]:
                             peer_addresses = map(lambda p: p.device.address, peers)
                             if device.address not in peer_addresses:
-                                logger.debug(f"🤝 Found trusted peer: {device_name} ({device.address}) RSSI: {advertisement_data.rssi}")
+                                logger.info(f"  🤝 Found trusted peer: {device_name} ({device.address}) RSSI: {advertisement_data.rssi}")
                                 peers.append(Peer(name=device_name, device=device, rssi=advertisement_data.rssi))
 
                 scanner = BleakScanner(detection_callback=detection_callback, service_uuids=[self.SERVICE_UUID])
                 
-                logger.debug(f"🔍 Attempt {discovery_attempt}/{max_discovery_retries}: scanning for trusted peers (pattern: {self.trusted_pattern}*)...")
+                logger.info(f"🔍 Attempt {discovery_attempt}/{max_discovery_retries}: scanning for trusted peers (pattern: {self.trusted_pattern}*)...")
                 await scanner.start()
                 await asyncio.sleep(scan_duration)
                 await scanner.stop()
             if not peers:
-                logger.debug(f"    ❌ No trusted peers found")
+                logger.info(f"    ❌ No trusted peers found")
                 if discovery_attempt < max_discovery_retries:
-                    logger.debug("    🔄 Restarting HCI interface and retrying...")
+                    logger.info("    🔄 Restarting HCI interface and retrying...")
                     self.restart_hci_interface()
                     await asyncio.sleep(3)  # Wait for HCI to restart
                 else:
@@ -550,24 +580,32 @@ class ThroughputTestPeer:
         time.sleep(1)
         print("✅ HCI interface reset complete")
 
-    async def connect_to_peer(self, peer: Peer) -> Optional[ConnectedPeer]:
+    async def connect_to_peer(self, peer: Peer, num_retries: int = 3) -> Optional[ConnectedPeer]:
         """Connect to a trusted peer"""
-        if peer.device.address in self.active_connections:
-            connected_peer = self.active_connections[peer.device.address]
+
+        is_connected = False
+        while not is_connected and num_retries > 0:
+            if peer.device.address in self.active_connections:
+                connected_peer = self.active_connections[peer.device.address]
+                try:
+                    if connected_peer.client.is_connected:
+                        return connected_peer
+                    else:
+                        logger.info(f"Peer is connected but client is not: reconnecting {peer.name}")
+                        await connected_peer.client.connect()
+                except Exception as e:
+                    logger.error(f"Error reconnecting to {peer.name}: {e}")
+                    del self.active_connections[peer.device.address]
+            client = BleakClient(peer.device.address)
             try:
-                if connected_peer.client.is_connected:
-                    return connected_peer
-                else:
-                    logger.debug(f"Peer is connected but client is not: reconnecting {peer.name}")
-                    await connected_peer.client.connect()
+                await client.connect()
+                is_connected = client.is_connected
+                num_retries -= 1
             except Exception as e:
-                logger.error(f"Error reconnecting to {peer.name}: {e}")
-                del self.active_connections[peer.device.address]
-        client = BleakClient(peer.device.address)
-        try:
-            await client.connect()
-        except Exception as e:
-            logger.error(f"Error connecting to {peer.name}: {e}")
+                logger.error(f"Error connecting to {peer.name}: {e}")
+                return None
+        if num_retries <= 0:
+            logger.error(f"❌ Failed to connect to {peer.name} after multiple attempts")
             return None
 
         try:
@@ -610,13 +648,14 @@ class ThroughputTestPeer:
             self.restart_hci_interface()
             return None
     
-    async def send_message_to_peer(self, peer: ConnectedPeer, message: Message) -> bool:
+    async def send_message_to_peer(self, peer: ConnectedPeer, message: Message, response: bool = False) -> bool:
         """Send message to a specific peer with retry mechanism"""
         message_bytes = message.__str__().encode('utf-8')
 
         try:
             # Use write-without-response for maximum throughput
-            await peer.client.write_gatt_char(self.MESSAGE_CHAR_UUID, message_bytes, response=False)
+            # Use write-with-response for protocol control
+            await peer.client.write_gatt_char(self.MESSAGE_CHAR_UUID, message_bytes, response=response)
         except Exception as e:
             # TODO: better exception handling if write fails
             # BleakGattCharacteristicNotFoundError
@@ -633,53 +672,62 @@ class ThroughputTestPeer:
                 
         return True
                 
-    async def broadcast_message(self, message: Message) -> int:
-        """Send message to all discovered trusted peers, returns count of messages sent"""
+    # async def broadcast_message(self, message: Message) -> int:
+    #     """Send message to all discovered trusted peers, returns count of messages sent"""
         
-        tasks = []
-        # TODO: send to everyone, not only discovered trusted peers
-        for connected_peer in self.active_connections.values():
-            tasks.append(self.send_message_to_peer(connected_peer, message))
-        
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            success_count = sum(1 for result in results if result is True)
-            return success_count
-        return 0
+    #     tasks: list[CoroutineType[Any, Any, bool]] = []
+    #     # TODO: send to everyone, not only discovered trusted peers
+    #     for connected_peer in self.active_connections.values():
+    #         tasks.append(self.send_message_to_peer(connected_peer, message, response=message.msg_type != MESSAGE_TYPE.DATA))
+
+    #     results = await asyncio.gather(*tasks, return_exceptions=True)
+    #     return sum([1 for result in results if result is True])
 
     async def perform_run(self, run_number: int, num_retries: int = 3):
         """Perform a round of ping-pong: send RTS/CTS, then PING or answer to PING with PONG"""
-        
-        # Wait [1-10s) to see if we receive RTS before sending our own RTS
-        initial_wait_time = random.uniform(1, 10)
-        logger.debug(f"⏳ Waiting {initial_wait_time}s for first message before potentially sending initial RTS")
+
+        # Wait [1-5s) ± [<inner_frame_time_us>, 5) to see if we receive RTS before sending our own RTS
+        # positive_or_negative = random.choice([1, -1])
+
+        first_key = next(iter(self.active_connections))
+        connected_peer = self.active_connections[first_key]
+
+        thread: threading.Thread | None = None
+        initial_wait_time = random.uniform(1, 5)
+        # logger.info(f"⏳ Waiting {initial_wait_time}s for first message before potentially sending initial RTS")
 
         got_control_message = await event_wait(self.got_control_message, initial_wait_time)
-        if got_control_message:
+        if got_control_message: # TODO: this should actually be got_rts_message because node does not send CTS during wait time
             # RTS or CTS received during wait period
             if not self.should_send_ping:
                 # Other node sent RTS, we became responder
-                logger.debug(f"📥 Received RTS during wait - becoming responder")
+                # logger.info(f"📥 Received RTS during wait - becoming responder")
+                logger.info("This node is the ponger")
                 pass
             else:
                 # Other node sent CTS, we became sender
-                logger.debug(f"📤 Received CTS during wait - becoming sender")
-                self.send_rts()
-                asyncio.create_task(self.start_ping_sequence())
+                logger.error(f"📤 Received CTS during wait - becoming sender - this should not happen")
+                return
         else:
             # No RTS received, this node will be the sender
-            logger.debug(f"📤 No RTS received during wait - becoming sender")
-            self.send_rts()
-            asyncio.create_task(self.start_ping_sequence())
-
-        got_data_event = await event_wait(self.got_data_message, self.test_duration)
-        if not got_data_event:
-            logger.debug(f"⚠️ No data messages received during test duration")
-            if num_retries > 0:
-                logger.debug(f"{num_retries} attempts left at protocol recovery...")
-                await self.perform_run(run_number, num_retries - 1)
-
-        await asyncio.sleep(self.test_duration)
+            # logger.info(f"📤 No RTS received during wait - becoming sender")
+            rts_message = self.create_rts_message()
+            result = await self.send_message_to_peer(connected_peer, rts_message, response=True)
+            if not result:
+                logger.error("❌ Failed to send RTS message, cannot continue run")
+                return
+            logger.info("This node is the pinger")
+            thread = threading.Thread(
+                target=self.start_ping_sequence,
+                daemon=True,
+                name="PingingThread"
+            )
+        if thread is not None:
+            thread.start()
+            thread.join(self.test_duration)
+            logger.warning("PING sequence timed out")
+        else:
+            await asyncio.sleep(self.test_duration)
         self.test_active = False
 
     async def prepare_and_perform_run(self, run_number: int):
@@ -691,12 +739,16 @@ class ThroughputTestPeer:
         self.test_active = True
         
         # Reset state for this run
-        self.sent_messages_count = 0
-        self.received_messages_count = 0
+        with self._state_lock:
+            self.sent_messages_count = 0
+            self.received_messages_count = 0
+            self.should_send_ping = True
+            self.clear_to_send = False
+            
         self.got_control_message.clear()
         self.got_data_message.clear()
-        self.should_send_ping = True
-        self.clear_to_send = False
+        
+        # print(f"🧹 Cleared events for run {run_number} at {time.time():.3f}")
 
         start_time = time.time()
         await self.perform_run(run_number)
@@ -704,10 +756,14 @@ class ThroughputTestPeer:
 
         await self.cleanup_message_queue(False)
         
+        with self._state_lock:
+            sent_count = self.sent_messages_count
+            received_count = self.received_messages_count
+        
         print(f"✅ Run {run_number} complete:")
         print(f"   ⏱️ Total time: {total_time:.2f}s")
-        print(f"   � Total messages sent: {self.sent_messages_count}")
-        print(f"   📥 Total messages received: {self.received_messages_count}")
+        print(f"   📤 Total messages sent: {sent_count}")
+        print(f"   📥 Total messages received: {received_count}")
         print(f"   📝 Received log: {self.incoming_log_filename}")
         print(f"   📝 Sent log: {self.outgoing_log_filename}")
 
@@ -718,7 +774,7 @@ class ThroughputTestPeer:
         active_connections: dict[str, ConnectedPeer] = {}
 
         for connection_attempt in range(1, max_connection_retries + 1):
-            logger.debug(f"🔗 Connection attempt {connection_attempt}/{max_connection_retries}")
+            logger.info(f"🔗 Attempt {connection_attempt}/{max_connection_retries}: connecting with trusted peers")
             successful_connections = 0
             
             for peer in peers:
@@ -726,24 +782,19 @@ class ThroughputTestPeer:
                 if connected_peer:
                     active_connections[peer.device.address] = connected_peer
                     successful_connections += 1
+
+                    await asyncio.sleep(5) # Wait longer for BLE connections to fully stabilize
                 else:
-                    logger.debug(f"❌ Failed to establish connection to {peer.device.address}")
+                    logger.info(f"❌ Failed to establish connection to {peer.device.address}")
 
             if successful_connections > 0:
-                logger.debug(f"✅ Successfully connected to {successful_connections}/{len(peers)} peers")
+                logger.info(f"  ✅ Successfully connected to {successful_connections}/{len(peers)} peers")
                 break
             elif connection_attempt < max_connection_retries:
-                logger.debug("🔄 No successful connections. Restarting HCI interface and retrying...")
+                logger.info("🔄 No successful connections. Restarting HCI interface and retrying...")
                 self.restart_hci_interface()
                 await asyncio.sleep(3)  # Wait for HCI to restart
-                active_connections.clear()
-            else:
-                logger.error("❌ Failed to establish any connections after all attempts. Cannot run experiment.")
-                traceback.print_exc()
-                raise(ValueError("❌ Failed to establish any connections after all attempts. Cannot run experiment."))
         
-        # Wait longer for BLE connections to fully stabilize
-        await asyncio.sleep(5)
         return active_connections
     
     async def start_throughput_experiment(self):
@@ -751,23 +802,30 @@ class ThroughputTestPeer:
         logger.info(f"🔄 Will run {self.num_runs} tests of {self.test_duration}s each, with {self.delay_between_runs}s delay between runs")
         logger.info(f"📏 Message size: {self.message_size} bytes")
         print("=" * 70)
+
+        self.main_loop = asyncio.get_running_loop()
         
         await self.start_server()
-        
-        self.outgoing_message_sender_thread.start()
         
         await asyncio.sleep(3) # waiting for server to stabilize
         
         peers = await self.discover_peers()
 
         self.active_connections = await self.connect_to_peers(peers)
+        has_active_connections = len(self.active_connections) > 0
+        if not has_active_connections:
+            logger.error("❌ No active connections established, cannot run experiment")
+            await self.cleanup()
+            return
         
+        self.outgoing_message_sender_thread.start()
+        self.incoming_message_processor_thread.start()
         for run_number in range(1, self.num_runs + 1):
-
-            await self.prepare_and_perform_run(run_number)
             
+            await self.prepare_and_perform_run(run_number)
+
             if run_number < self.num_runs:
-                logger.debug(f"⏳ Waiting {self.delay_between_runs}s before next run...")
+                logger.info(f"⏳ Waiting {self.delay_between_runs}s before next run...")
                 await asyncio.sleep(self.delay_between_runs)
         
         logger.info(f"🏁 Experiment complete! All {self.num_runs} runs finished.")
@@ -786,21 +844,12 @@ class ThroughputTestPeer:
         self.active_connections.clear()
 
     async def cleanup_message_queue(self, should_cancel: bool = True):
-        def empty_asyncio_queue(q: asyncio.Queue[Message]):
-            if not q.empty():
-                print(f"Clearing {q.qsize()} items from the asyncio queue")
-                while not q.empty():
-                    q.get_nowait()
-                    q.task_done()
-                print(f"Asyncio queue now has {q.qsize()} items")
-
         def empty_thread_queue(q: queue.Queue[Message]):
             if not q.empty():
                 print(f"Clearing {q.qsize()} items from the thread queue")
                 while not q.empty():
                     try:
                         q.get_nowait()
-                        q.task_done()
                     except queue.Empty:
                         break
                 print(f"Thread queue now has {q.qsize()} items")
@@ -811,18 +860,15 @@ class ThroughputTestPeer:
             self.flush_buffer(self.sent_log_buffer, self.outgoing_log_filename)
 
         logger.info("Clearing incoming message queue...")
-        empty_asyncio_queue(self.incoming_message_queue)
+        empty_thread_queue(self.incoming_message_queue)
 
         logger.info("Clearing outgoing message queue...")
         empty_thread_queue(self.outgoing_message_queue)
 
         if should_cancel:
-            if self.incoming_message_processor_task and not self.incoming_message_processor_task.done():
-                self.incoming_message_processor_task.cancel()
-                try:
-                    await self.incoming_message_processor_task
-                except asyncio.CancelledError:
-                    pass
+            if self.incoming_message_processor_thread and self.incoming_message_processor_thread.is_alive():
+                # The thread will stop when self.experiment_active becomes False
+                self.incoming_message_processor_thread.join(timeout=2.0)
             if self.outgoing_message_sender_thread and self.outgoing_message_sender_thread.is_alive():
                 # The thread will stop when self.experiment_active becomes False
                 self.outgoing_message_sender_thread.join(timeout=2.0)
