@@ -1,0 +1,100 @@
+\documentclass[sigconf,nonacm]{acmart}
+
+\usepackage{enumitem}
+\setlist[enumerate,1]{label=\arabic*.}
+\usepackage{siunitx}
+\usepackage{hyperref}  % optional, for clickable links
+\usepackage{cleveref}  % always load *after* hyperref
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage[table]{xcolor}
+
+\AtBeginDocument{%
+  \providecommand\BibTeX{{%
+    Bib\TeX}}}
+
+\settopmatter{printfolios=true}
+
+\begin{document}
+
+\title{Resilient decentralized communicatidon for unstructured peer-to-peer networks}
+
+\author{Dan Bachar}
+\affiliation{%s
+  \institution{Technische Universit{\"a}t M{\"u}nchen \\ TUM Chair for Connected Mobility}
+  \city{Munich}
+  \country{Germany}
+}
+\email{dan.bachar@tum.de}
+
+% \author{David Guzman}
+% \affiliation{%s
+%   \institution{Technische Universit{\"a}t M{\"u}nchen \\ TUM Chair for Connected Mobility}
+%   \city{Munich}
+%   \country{Germany}
+% }
+% \email{david.guzman@tum.de}
+
+% \author{Jörg Ott}
+% \affiliation{%s
+%   \institution{Technische Universit{\"a}t M{\"u}nchen \\ TUM Chair for Connected Mobility}
+%   \city{Munich}
+%   \country{Germany}
+% }
+% \email{ott@tum.de}
+
+\maketitle
+
+\section*{Abstract}
+\input{chapters/abstract}
+\label{sec:abstract}
+
+\section{Introduction}
+\input{chapters/intro}
+\label{sec:introduction}
+
+\section{Background}
+\input{chapters/background}
+\label{sec:background}
+
+\section{Related Work}
+\input{chapters/related}
+\label{sec:related}
+
+\section{Setup}
+\subsection{Hardware}
+\input{chapters/hardware_setup}
+\label{sec:hardware_setup}
+
+\subsection{Software}
+\input{chapters/software_setup}
+\label{sec:software_setup}
+
+\section{Methodology}
+\input{chapters/methodology}
+\label{sec:methodology}
+
+\section{Results}
+\input{chapters/results}
+\label{sec:results}
+
+\section{Analysis}
+\input{chapters/analysis}
+\label{sec:analysis}
+
+\section{Discussion}
+\input{chapters/discussion}
+\label{sec:discussion}
+
+% \subsection{Discussion}
+% To conclude this section and experiment, we investigated the difference in device usage in the network trace of these devices. In order to compare whether the observation also applies to different types of devices from different manufacturers, further investigations would have to be carried out. Unfortunately, since only Apple devices were available, it was only possible to compare them with each other. Additionally, the analysis is limited by the protocol-wise analysis by assuming the iPad and the MacBook are one device and are analyzed together. To get a more comprehensive view. The devices have to be observed and analysed separately from each other. 
+
+% \section*{Acknowledgements}
+% We acknowledge that GitHub Copilot was utilized to help with writing the code for refining plots, and Grammarly was utilized to correct typos and punctuation mistakes. \cite{rfc2236}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}
+\endinput
