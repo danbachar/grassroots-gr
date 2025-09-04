@@ -1,4 +1,4 @@
-build/**/*
+**build/**/*
 simulations/the-one/reports_data
 simulations/the-one/out
 simulations/the-one/target
@@ -7,3 +7,17 @@ simulations/**/.idea
 simulations/**/.vscode
 simulations/out
 simulations/the-one/reports
+paper/build/*
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.fls
+paper/*.fdb*
+paper/*.synctex*
+*backup*
+pi-ble/figures/*
+pi-ble/bin/*
+pi-ble/lib/*
+*old*
