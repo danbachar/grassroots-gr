@@ -1,1 +1,65 @@
-Recent events (natural disasters, war, protests) have shown that people heavily rely on online social networks and instant messaging platforms to communicate and coordinate aid efforts during cases such as disaster relief, protests, or emergency response to natural disasters. The existing internet infrastructure is distributed, but its management and ownership is heavily centralized which places power in the hands of a few individuals or companies, that are susceptible to implicit and explicit censorship, while the infrastructure itself is prone to failure in cases of disaster, leaving reliant communities in the dark. In this paper, we propose performance statistics for both simulated as well as real-life unstructured peer-to-peer social networks, as well as investigate and propose resilience metrics for such opportunistic networks.
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{plots/message-distance-distribution.png}
+    \caption{Message distance distribution across all simulation runs}
+    \label{fig:message-distance-distribution}
+\end{figure}
+
+
+\subsection{Bitrate}
+Other than the deliverability probabiliy, we are also interested in seeing how the bitrate changes correlate with the distance changes. Each curve in this graph comes from a simulation with the corresponding communication range: $[5, 120]$ meter ranges are visible (the 1m curve is missing due to not having any delivered messages available). 
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{plots/bitrate_vs_distance_by_range.png}
+    \caption{Bitrate vs distance by communication range}
+    \label{fig:bitrate-vs-distance-by-range}
+\end{figure}
+
+\subsection{Message Deliverability over distance}
+The following plot shows how the deliverability of messages changes as the communication range increases. Expectedly we see an improvement of the message delivery probability as the communication range increases: between $[1,10]$ meter communication radius barely any messages were able to be delivered; that is due to the fact that 25 hosts were randomly placed on a 400$\times$400m space without movement - if we placed more hosts, the delivery percentage would trivially increase.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{plots/deliverability_vs_communication_range.png}
+    \caption{Message deliverability vs communication range}
+    \label{fig:deliverability-vs-communication-range}
+\end{figure}
+
+\subsection{End-to-end Latency}
+As the latency distribution plot below shows, spending more energy to expand the reliable communication range does not necessarily directly correlate with a higher achieved bitrate: that is due to nodes spending more processing time relaying messages, buffers filling up, and nodes getting overflown with messages. A lower communication range also means less messages are sent, which yields nodes that can more easily process messages; at this point it's worth to mention that the routing technique used is the epidemic routing, where each ndoe forwards each message it receives to all nodes it's connected to, until the destination is found; the epidemic router does not automatically drop messages upon succesful delivery of a node to the intended destination of a message, which leads to the buffer bloat. 
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{plots/latency_percentiles.png}
+    \caption{End-to-end latency percentiles by communication range}
+    \label{fig:latency-percentiles}
+\end{figure}
+
+\subsection{Effect of node degree on hop latency and count}
+The following three plots illustrate how the node degree correlates with message hop count, hop latency, and communication range.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{plots/node_degree_vs_hop_count.png}
+    \caption{Node degree vs hop count by communication range}
+    \label{fig:node-degree-vs-hop-count}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{plots/node_degree_vs_hoplatency.png}
+    \caption{Node degree vs hop latency}
+    \label{fig:node-degree-vs-hoplatency}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\textwidth]{plots/node_degree_vs_communication_radius.png}
+    \caption{Node degree vs communication radius}
+    \label{fig:node-degree-vs-communication-radius}
+\end{figure}
+
+The first plot, node degree vs. hop count by communication range, has a curve for each one of the simulated communication ranges, and shows raw values for the node degree (as well as the second plot): in this context, node degree is defined as the number of neighbours each node is connected to; a node is connected to all nodes it is a neighbour of. We can see an expected decrease in message hop count as the communication range increases, with the 120m range showing the highest node degree, and shows the most stable decrease in hop count as node degree increases.
+The second plot mainly shows one key point: for most node degrees, the average hop latency does not change, other than outliers around node degrees higher than 12, which are also less statistically significant as the inner quartile range is higher.
+The last plot showcases an expected increase in the median node degree as the communication range increases; the median node degree starts being true positive around the communication radius of 40 meters, simply because through the 
