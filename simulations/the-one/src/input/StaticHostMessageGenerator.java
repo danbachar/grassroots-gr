@@ -149,7 +149,7 @@ public class StaticHostMessageGenerator
       return hosts.stream()
         .flatMap(h1 -> hosts.stream()
           .filter(h2 -> h1 != h2)
-          .filter(h2 -> this.mode == Mode.INTER_CLUSTER || (((RandomStationaryCluster) h1.getMovementModel()).isInSameCluster(h2)))
+          // .filter(h2 -> this.mode == Mode.INTER_CLUSTER || (((RandomStationaryCluster) h1.getMovementModel()).isInSameCluster(h2)))
           .map(h2 -> (int) Math.round(h1.getLocation().distance(h2.getLocation())))
         )
         .distinct()
@@ -175,7 +175,7 @@ public class StaticHostMessageGenerator
       .stream()
       .flatMap(h1 -> hosts.stream()
         .filter(h2 -> h1 != h2)
-        .filter(h2 -> this.mode == Mode.INTER_CLUSTER || (((RandomStationaryCluster) h1.getMovementModel()).isInSameCluster(h2)))
+        // .filter(h2 -> this.mode == Mode.INTER_CLUSTER || (((RandomStationaryCluster) h1.getMovementModel()).isInSameCluster(h2)))
         .map(h2 -> new HostPair(h1, h2)))
       .forEach(pair -> {
         int distance = (int) Math.round(pair.fromHost.getLocation().distance(pair.toHost.getLocation()));

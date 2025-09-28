@@ -60,7 +60,7 @@ public class BluetoothInterface extends NetworkInterface {
         if (isScanning()
                 && anotherInterface.getHost().isRadioActive()
                 && isWithinRange(anotherInterface)
-                && isWithinSameCluster(anotherInterface)
+                && isInSameCluster(anotherInterface)
                 && !isConnected(anotherInterface)
                 && (this != anotherInterface)
                 && (hasConnectionCapacity(anotherInterface))
@@ -83,14 +83,15 @@ public class BluetoothInterface extends NetworkInterface {
                 && anotherInterface.getConnections().size() < this.maximumParallelConnections;
     }
 
-    private boolean isWithinSameCluster(NetworkInterface anotherInterface) {
+    private boolean isInSameCluster(NetworkInterface anotherInterface) {
         // assume the other interface is also BluetoothInterface
         // as this function is only called unidirectionally
         // also assume both this and the other host are both RandomStationaryCluster movement model
         RandomStationaryCluster thisMovement = (RandomStationaryCluster)this.getHost().getMovementModel();
 
         // TODO: support also inter-cluster comms based on the message generator mode
-        return thisMovement.isInSameCluster(anotherInterface.getHost());
+        // return thisMovement.isInSameCluster(anotherInterface.getHost());
+        return true;
     }
 
     /**
