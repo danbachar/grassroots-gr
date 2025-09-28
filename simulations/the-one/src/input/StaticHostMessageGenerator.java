@@ -2,17 +2,31 @@ package input;
 
 import core.*;
 import gui.DTNSimGUI;
-import java.util.*;
+import movement.RandomStationaryCluster;
 
+import java.util.*;
 public class StaticHostMessageGenerator
     extends SingleMessageGenerator {
   public static final String COUNT_PER_DISTANCE_S = "count";
   public static final String BIN_SIZE_S = "binSize";
+  public static final String MODE_S = "mode";
   protected final int countPerDistance;
   protected final int binSize;
+  protected final Mode mode;
+
   protected boolean firstRun = true;
   protected static List<Integer> binRanges = null;
   protected static List<Bin> binHostPairs = null; // count left per bin, together with host pairs in bin
+
+  public static enum Mode {
+    INTRA_CLUSTER,
+    INTER_CLUSTER;
+
+    public static final Mode getByValue(int value){
+      return Arrays.stream(Mode.values()).filter(e -> e.ordinal() == value).findFirst().orElse(INTRA_CLUSTER);
+    }
+
+  }
 
   private record HostPair(DTNHost fromHost, DTNHost toHost) {}
 
@@ -44,6 +58,7 @@ public class StaticHostMessageGenerator
     super(s);
     this.countPerDistance = s.getInt(COUNT_PER_DISTANCE_S);
     this.binSize = s.getInt(BIN_SIZE_S);
+    this.mode = Mode.getByValue(s.getInt(MODE_S));
   }
 
   @Override
@@ -134,6 +149,7 @@ public class StaticHostMessageGenerator
       return hosts.stream()
         .flatMap(h1 -> hosts.stream()
           .filter(h2 -> h1 != h2)
+          .filter(h2 -> this.mode == Mode.INTER_CLUSTER || (((RandomStationaryCluster) h1.getMovementModel()).isInSameCluster(h2)))
           .map(h2 -> (int) Math.round(h1.getLocation().distance(h2.getLocation())))
         )
         .distinct()
@@ -159,6 +175,7 @@ public class StaticHostMessageGenerator
       .stream()
       .flatMap(h1 -> hosts.stream()
         .filter(h2 -> h1 != h2)
+        .filter(h2 -> this.mode == Mode.INTER_CLUSTER || (((RandomStationaryCluster) h1.getMovementModel()).isInSameCluster(h2)))
         .map(h2 -> new HostPair(h1, h2)))
       .forEach(pair -> {
         int distance = (int) Math.round(pair.fromHost.getLocation().distance(pair.toHost.getLocation()));

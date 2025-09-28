@@ -1,11 +1,11 @@
 package interfaces;
 
 import core.*;
-import util.Room;
-
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
+import movement.RandomStationaryCluster;
+import util.Room;
 
 // loosely based on bluetooth 5.0, but only in direct line of sight
 //  Optionally supports a churn rate p: for every timeslot, there is a p chance this connection will break (and never come back)
@@ -60,6 +60,7 @@ public class BluetoothInterface extends NetworkInterface {
         if (isScanning()
                 && anotherInterface.getHost().isRadioActive()
                 && isWithinRange(anotherInterface)
+                && isWithinSameCluster(anotherInterface)
                 && !isConnected(anotherInterface)
                 && (this != anotherInterface)
                 && (hasConnectionCapacity(anotherInterface))
@@ -80,6 +81,16 @@ public class BluetoothInterface extends NetworkInterface {
         // as this function is only called unidirectionally
         return this.connections.size() < this.maximumParallelConnections
                 && anotherInterface.getConnections().size() < this.maximumParallelConnections;
+    }
+
+    private boolean isWithinSameCluster(NetworkInterface anotherInterface) {
+        // assume the other interface is also BluetoothInterface
+        // as this function is only called unidirectionally
+        // also assume both this and the other host are both RandomStationaryCluster movement model
+        RandomStationaryCluster thisMovement = (RandomStationaryCluster)this.getHost().getMovementModel();
+
+        // TODO: support also inter-cluster comms based on the message generator mode
+        return thisMovement.isInSameCluster(anotherInterface.getHost());
     }
 
     /**
@@ -192,7 +203,6 @@ public class BluetoothInterface extends NetworkInterface {
     }
 }
 
-// Disclaimer: Claude Sonnet 4 was used to write this
 class BluetoothLEBitrateCalculator {
 
     // Constants

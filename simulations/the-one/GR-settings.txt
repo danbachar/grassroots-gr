@@ -7,27 +7,60 @@ Report.nrofReports = 2
 Report.report1 = UnifiedReport
 Report.report2 = AdjacencyMatrixReport
 Report.reportDir=reports_data
-Report.xCount = 500
-Report.yCount = 500
+Report.xCount = 580
+Report.yCount = 580
 Report.bufferSize = 20000
 AdjacencyMatrixReport.granularity = 10
 
-MovementModel.worldSize = 500, 500
+MovementModel.worldSize = 580, 580
 MovementModel.warmup = 0
 MovementModel.rngSeed = 1
+Group.movementModel = RandomStationaryCluster
+Group.hostsPerCluster = 6
+Group.numberOfClusters = 10
+Group.router = EpidemicRouter
+Group.speed = 0, 0
+Group.nrofInterfaces = 1
+Group.interface1 = bluetoothInterface
 
-## Group settings
-Scenario.nrofHostGroups = 1
+# Scenario.nrofHostGroups = 1
+# Group1.groupID = random_stationary_
+# Group1.nrofHosts = 25
+# Group1.offsetX = 50
+# Group1.offsetY = 50
 
-Group1.groupID = random_stationary_
-Group1.nrofHosts = 25
-Group1.movementModel = RandomStationaryConstrained
-Group1.offsetX = 50
-Group1.offsetY = 50
-Group1.router = EpidemicRouter
-Group1.speed = 0, 0
-Group1.nrofInterfaces = 1
-Group1.interface1 = bluetoothInterface
+#####[START]>Group
+Scenario.nrofHostGroups = 12
+Group.nrofHosts = 6
+Group.numberOfClusters = 12
+Group.clusterSize = 120
+Group.offsetX = 50
+Group.offsetY = 50
+Group1.clusterID = 0
+Group1.groupID = random_stationary_0_
+Group2.clusterID = 1
+Group2.groupID = random_stationary_1_
+Group3.clusterID = 2
+Group3.groupID = random_stationary_2_
+Group4.clusterID = 3
+Group4.groupID = random_stationary_3_
+Group5.clusterID = 4
+Group5.groupID = random_stationary_4_
+Group6.clusterID = 5
+Group6.groupID = random_stationary_5_
+Group7.clusterID = 6
+Group7.groupID = random_stationary_6_
+Group8.clusterID = 7
+Group8.groupID = random_stationary_7_
+Group9.clusterID = 8
+Group9.groupID = random_stationary_8_
+Group10.clusterID = 9
+Group10.groupID = random_stationary_9_
+Group11.clusterID = 10
+Group11.groupID = random_stationary_10_
+Group12.clusterID = 11
+Group12.groupID = random_stationary_11_
+#####[END]>Group
 
 GUI.UnderlayImage.fileName = data/hall.png
 GUI.UnderlayImage.offset = 0,0

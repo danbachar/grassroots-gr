@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import ui.DTNSimTextUI;
+import util.HostCluster;
 import util.Room;
 
 /**
@@ -19,6 +20,7 @@ import util.Room;
  */
 public class DTNSim {
 	public static List<Room> allRooms; // TODO: initialize
+	public static List<HostCluster> allHostClusters; // TODO: initialize
 	/**
 	 * If this option ({@value}) is given to program, batch mode and
 	 * Text UI are used
@@ -84,8 +86,11 @@ public class DTNSim {
 		initSettings(confFiles, firstConfIndex);
 
 		// hardcode rooms for now
-		Room hall = new Room("data/hall.wkt", "Hall");
+		Room hall = new Room("data/hall.wkt", "Hall", 50, 50);
 		DTNSim.allRooms = List.of(hall);
+
+		// hardcode host clusters for now
+		DTNSim.allHostClusters = new ArrayList();
 
 		if (batchMode) {
 			long startTime = System.currentTimeMillis();

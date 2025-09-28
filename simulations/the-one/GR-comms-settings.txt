@@ -9,6 +9,8 @@ bluetoothInterface.churnRate = 0
 # Message related settings
 Events.nrof = 1
 Events1.class = StaticHostMessageGenerator
+# 0 for intra-cluster communication, 1 for inter-cluster communication
+Events1.mode = 0
 Events1.count = 1000
 Events1.binSize = 5
 Events1.interval = 1

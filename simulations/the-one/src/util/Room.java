@@ -1,19 +1,32 @@
 package util;
 
 import core.Coord;
-
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 
 // Helper class to store room dimensions
 public class Room {
-    private final List<Coord> polygon;
 
-    public Room(String filePath, String name) {
+    private final List<Coord> polygon;
+    private final List<Line> segments;
+    private final Coord origin;
+
+    public Room(String filePath, String name, double offsetX, double offsetY) {
         this.polygon = readPolygon(filePath);
         if (polygon.isEmpty()) {
             System.err.println("LectureTakerMovement: No valid polygon found in file " + filePath);
         }
+        var segments = new ArrayList<Line>();
+        for (int i = 0; i < polygon.size(); i++) {
+            Coord start = polygon.get(i);
+            Coord end = polygon.get((i + 1) % polygon.size()); // wrap around to first vertex
+            segments.add(new Line(start, end));
+        }
+        this.segments = segments;
+
+        origin = new Coord(offsetX, offsetY);
     }
 
     public List<Coord> getPolygon() {
@@ -45,8 +58,19 @@ public class Room {
             return false;
         }
 
-        int intersections = getIntersections(coordinate);
+        // Check if coordinate is exactly one of the polygon vertices
+        if (polygon.contains(coordinate)) {
+            return true;
+        }
 
+        // check if coordinate is located on one of the polygon edges
+        boolean isOnEdge = this.segments.stream().anyMatch(segment -> segment.isPointOnSegment(coordinate));
+        if (isOnEdge) {
+            return true;
+        }
+
+        // Check if coordinate is inside the polygon using ray casting
+        int intersections = getIntersections(coordinate);
         return intersections % 2 == 1;
     }
 
@@ -67,96 +91,133 @@ public class Room {
             last = current;
 
             Line segment = new Line(previousPoint, current);
-            if (line.hasIntersectionWithSegment(segment)) {
+            var hasIntersections = line.getSegmentInterception(segment).isPresent();
+            if (hasIntersections) {
                 return true;
             }
         }
 
         Line segment = new Line(last, polygon.getFirst());
 
-        return line.hasIntersectionWithSegment(segment);
+        return line.getSegmentInterception(segment).isPresent();
     }
 
     private int getIntersections(Coord coordinate) {
-        Coord origin = new Coord(0, 0);
-        Line ray = new Line(origin, coordinate);
+        Line ray = new Line(this.origin, coordinate);
 
         // ray-casting algorithm: if number of intersections of ray from origin to coord with polygon is even, point is outside
         // else, point is inside
         // https://stackoverflow.com/a/218081
-
         // TODO: not efficient, not pretty, should be made better, but easy for now
-        Coord last = polygon.getFirst();
-        int intersections = 0;
+        HashSet<Coord> intersections = new HashSet<>();
         for (int i = 1; i < polygon.size(); i++) {
             Coord previousPoint = polygon.get(i - 1);
             Coord current = polygon.get(i);
-            last = current;
 
             Line segment = new Line(previousPoint, current);
-            boolean hit = ray.hasIntersectionWithSegment(segment);
-            if (hit) {
-                intersections += 1;
+            var intersection = ray.getSegmentInterception(segment);
+            if (intersection.isPresent()) {
+                intersections.add(intersection.get());
             }
         }
 
+        Coord last = polygon.getLast();
         Line segment = new Line(last, polygon.getFirst());
-        if (ray.hasIntersectionWithSegment(segment)) {
-            intersections += 1;
+        var intersection = ray.getSegmentInterception(segment);
+        if (intersection.isPresent()) {
+            intersections.add(intersection.get());
         }
-        return intersections;
+
+        return intersections.size();
     }
 
-    private record Line(Coord start, Coord end) {
+    public double getWidth() {
+        var maxXPolygonCoordinate = this.polygon.stream().mapToDouble(Coord::getX).max().getAsDouble();
+        var minXPolygonCoordinate = this.polygon.stream().mapToDouble(Coord::getX).min().getAsDouble();
+        return maxXPolygonCoordinate - minXPolygonCoordinate;
+    }
+
+    public double getHeight() {
+        var maxYPolygonCoordinate = this.polygon.stream().mapToDouble(Coord::getY).max().getAsDouble();
+        var minYPolygonCoordinate = this.polygon.stream().mapToDouble(Coord::getY).min().getAsDouble();
+        return maxYPolygonCoordinate - minYPolygonCoordinate;
+    }
+
+    public record Line(Coord start, Coord end) {
 
         /*
-             * Line intercept math by Paul Bourke
-             * http://paulbourke.net/geometry/pointlineplane/
-             *
-             * - Returns the coordinate of the intersection point
-             * - Returns FALSE if the lines don't intersect
-             *
-             * Coordinates x1, y1, x2 and y2 designate the start and end point of the first
-             * line
-             * Coordinates x3, y3, x4 and y4 designate the start and end point of the second
-             * line
-             */
-            private boolean hasIntersectionWithSegment(Line segment) {
-                double distance1 = this.start().distance(this.end());
-                double distance2 = segment.start().distance(segment.end());
+        * Line intercept math by Paul Bourke
+        * http://paulbourke.net/geometry/pointlineplane/
+        *
+        * - Returns the coordinate of the intersection point
+        * - Returns FALSE if the lines don't intersect
+        *
+        * Coordinates x1, y1, x2 and y2 designate the start and end point of the first
+        * line
+        * Coordinates x3, y3, x4 and y4 designate the start and end point of the second
+        * line
+         */
+        public Optional<Coord> getSegmentInterception(Line segment) {
+            double distance1 = this.start().distance(this.end());
+            double distance2 = segment.start().distance(segment.end());
 
-                if (distance1 == 0 || distance2 == 0) {
-                    return false;
-                }
-
-                // Coordinates x1, y1, x2 and y2 designate the start and end point of the line
-                // Coordinates x3, y3, x4 and y4 designate the start and end point of the (polygon) segment
-                double x1 = this.start().getX();
-                double x2 = this.end().getX();
-                double x3 = segment.start().getX();
-                double x4 = segment.end().getX();
-                double y1 = this.start().getY();
-                double y2 = this.end().getY();
-                double y3 = segment.start().getY();
-                double y4 = segment.end().getY();
-
-                double denominator = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
-
-                // Lines are parallel
-                if (denominator == 0) {
-                    return false;
-                }
-
-                double ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
-                double ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
-
-                // is the intersection along the segments
-                if (ua < 0 || ua > 1 || ub < 0 || ub > 1) {
-                    return false;
-                }
-
-                return true;
+            if (distance1 == 0 || distance2 == 0) {
+                return Optional.empty();
             }
+
+            // Coordinates x1, y1, x2 and y2 designate the start and end point of the line
+            // Coordinates x3, y3, x4 and y4 designate the start and end point of the (polygon) segment
+            double x1 = this.start().getX();
+            double x2 = this.end().getX();
+            double x3 = segment.start().getX();
+            double x4 = segment.end().getX();
+            double y1 = this.start().getY();
+            double y2 = this.end().getY();
+            double y3 = segment.start().getY();
+            double y4 = segment.end().getY();
+
+            double denominator = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+
+            // Lines are parallel
+            if (denominator == 0) {
+                return Optional.empty();
+            }
+
+            double ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
+            double ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
+
+            // is the intersection along the segments
+            if (ua < 0 || ua > 1 || ub < 0 || ub > 1) {
+                return Optional.empty();
+            }
+
+            double x = x1 + ua * (x2 - x1);
+            double y = y1 + ua * (y2 - y1);
+
+            var point = new Coord(x, y);
+            return Optional.of(point);
         }
 
+        public boolean isPointOnSegment(
+                final Coord point) {
+            final double crossProduct
+                    = (point.getY() - start.getY()) * (end.getX() - start.getX())
+                    - (point.getX() - start.getX()) * (end.getY() - start.getY());
+            if (Math.abs(crossProduct) > 0.0000001) {
+                return false;
+            }
+
+            final double dotProduct
+                    = (point.getX() - start.getX()) * (end.getX() - start.getX())
+                    + (point.getY() - start.getY()) * (end.getY() - start.getY());
+            if (dotProduct < 0) {
+                return false;
+            }
+
+            final double squaredLength
+                    = (end.getX() - start.getX()) * (end.getX() - start.getX())
+                    + (end.getY() - start.getY()) * (end.getY() - start.getY());
+            return dotProduct <= squaredLength;
+        }
+    }
 }
