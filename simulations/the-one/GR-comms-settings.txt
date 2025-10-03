@@ -1,20 +1,3 @@
-## Interface-specific settings:
-# "Bluetooth" interface for all nodes
-bluetoothInterface.type = BluetoothInterface
-bluetoothInterface.transmitRange = 120
-bluetoothInterface.transmitSpeed = 0 # Dummy setting required for simulator to properly work
-bluetoothInterface.maximumParallelConnections = 1000
-bluetoothInterface.churnRate = 0
-
-# Message related settings
-Events.nrof = 1
-Events1.class = StaticHostMessageGenerator
 # 0 for intra-cluster communication, 1 for inter-cluster communication
 Events1.mode = 0
-Events1.count = 1000
-Events1.binSize = 5
-Events1.interval = 1
-Events1.size = 100
-Events1.hosts = 0,25
-Events1.toHosts = 0,25
-Events1.prefix = M
+bluetoothInterface.communicationMode = 0

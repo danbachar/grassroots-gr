@@ -1,6 +1,8 @@
 package interfaces;
 
 import core.*;
+import input.StaticHostMessageGenerator;
+import input.StaticHostMessageGenerator.Mode;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -14,12 +16,10 @@ public class BluetoothInterface extends NetworkInterface {
      * Maximum number of parallel connections allowed -setting id ({@value} ).
      */
     public static final String PARALLEL_CONNECTIONS_S = "maximumParallelConnections";
-    public static final String CHURN_RATE_S = "churnRate";
+    public static final String COMMUNICATION_MODE_S = "communicationMode";
 
     protected final int maximumParallelConnections;
-    protected final double churnRate;
-
-    protected final Set<String> blacklist = new HashSet<>();
+    protected final StaticHostMessageGenerator.Mode mode;
 
     /**
      * Reads the interface settings from the Settings file
@@ -27,7 +27,7 @@ public class BluetoothInterface extends NetworkInterface {
     public BluetoothInterface(Settings s) {
         super(s);
         maximumParallelConnections = s.getInt(PARALLEL_CONNECTIONS_S);
-        churnRate = s.getDouble(CHURN_RATE_S, 0);
+        this.mode = Mode.getByValue(s.getInt(COMMUNICATION_MODE_S));
     }
 
     /**
@@ -38,7 +38,7 @@ public class BluetoothInterface extends NetworkInterface {
     public BluetoothInterface(BluetoothInterface ni) {
         super(ni);
         maximumParallelConnections = ni.maximumParallelConnections;
-        churnRate = ni.churnRate;
+        this.mode = ni.mode;
     }
 
     public NetworkInterface replicate() {
@@ -60,11 +60,10 @@ public class BluetoothInterface extends NetworkInterface {
         if (isScanning()
                 && anotherInterface.getHost().isRadioActive()
                 && isWithinRange(anotherInterface)
-                && isInSameCluster(anotherInterface)
+                && canCommunicateWith(anotherInterface)
                 && !isConnected(anotherInterface)
                 && (this != anotherInterface)
-                && (hasConnectionCapacity(anotherInterface))
-                && !this.blacklist.contains(otherID)) {
+                && (hasConnectionCapacity(anotherInterface))) {
             // perform costly line of sight check only if all the other conditions hold
             boolean hasClearLineOfSight = hasFreeLineOfSight(this.getHost(), anotherInterface.getHost());
 
@@ -83,21 +82,21 @@ public class BluetoothInterface extends NetworkInterface {
                 && anotherInterface.getConnections().size() < this.maximumParallelConnections;
     }
 
-    private boolean isInSameCluster(NetworkInterface anotherInterface) {
+    private boolean canCommunicateWith(NetworkInterface anotherInterface) {
         // assume the other interface is also BluetoothInterface
-        // as this function is only called unidirectionally
         // also assume both this and the other host are both RandomStationaryCluster movement model
         RandomStationaryCluster thisMovement = (RandomStationaryCluster)this.getHost().getMovementModel();
 
-        // TODO: support also inter-cluster comms based on the message generator mode
-        // return thisMovement.isInSameCluster(anotherInterface.getHost());
-        return true;
+        // intercluster communication mode does not restrict communication between clusters
+        // intracluster mode imposes communication only within the cluster
+        return this.mode == Mode.INTER_CLUSTER || thisMovement.isInSameCluster(anotherInterface.getHost());
     }
 
     /**
      * Updates the state of current connections (i.e. tears down connections
      * that are out of range and creates new ones).
      */
+    @Override
     public void update() {
         if (optimizer == null) {
             return; /* nothing to do */
@@ -114,17 +113,9 @@ public class BluetoothInterface extends NetworkInterface {
             DTNHost from = this.getHost();
             DTNHost to = anotherInterface.getHost();
             double p = this.getRandomDouble();
-            boolean hasChurned = p <= this.churnRate;
-            if (!isWithinRange(anotherInterface) || !hasFreeLineOfSight(from, to) || hasChurned) {
+            if (!isWithinRange(anotherInterface) || !hasFreeLineOfSight(from, to)) {
                 disconnect(con, anotherInterface);
                 connections.remove(i);
-
-                if (hasChurned) {
-                    // never allow this connection again: add to-node to blacklist
-                    String id = to.groupId + to.getAddress();
-                    System.out.println("Churning " + id);
-                    this.blacklist.add(id);
-                }
             } else {
                 i++;
             }

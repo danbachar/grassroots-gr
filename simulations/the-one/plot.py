@@ -979,6 +979,232 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
                 bbox_inches='tight', dpi=300)
     plt.close()
 
+def plot_delivery_probability_vs_distance_by_range(all_messages: list[Message], delivered_messages: list[Message], 
+                                                  time_threshold: float = 60.0, num_bins: int = 20):
+    """
+    Plot delivery probability within time_threshold vs distance for each communication range.
+    
+    Creates a separate plot for each communication range showing:
+    - X-axis: Distance the message has to travel
+    - Y-axis: Percentage of messages delivered within time_threshold seconds
+    - Vertical asymptote at the communication range limit
+    
+    Args:
+        all_messages: All created messages (including undelivered)
+        delivered_messages: Only successfully delivered messages
+        time_threshold: Time threshold in seconds for delivery probability calculation
+        num_bins: Number of distance bins to use for analysis
+    """
+    # Get all unique communication ranges
+    comm_ranges = sorted(set(msg.communication_range for msg in all_messages), key=int)
+    
+    # Create a subplot for each communication range
+    n_ranges = len(comm_ranges)
+    cols = min(3, n_ranges)  # Max 3 columns
+    rows = (n_ranges + cols - 1) // cols  # Calculate needed rows
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
+    if n_ranges == 1:
+        axes = [axes]
+    elif rows == 1:
+        axes = [axes] if n_ranges == 1 else axes
+    else:
+        axes = axes.flatten()
+    
+    # Hide extra subplots if we have more subplots than ranges
+    for i in range(n_ranges, len(axes)):
+        axes[i].set_visible(False)
+    
+    for idx, comm_range in enumerate(comm_ranges):
+        ax = axes[idx]
+        
+        # Filter messages for this communication range
+        all_msgs_range = [msg for msg in all_messages if msg.communication_range == comm_range and msg.distance > 0]
+        # Filter all messages that were delivered within the time threshold (not just from delivered_messages)
+        delivered_msgs_range = [msg for msg in all_msgs_range 
+                               if msg.is_delivered == 1 and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
+        
+        if not all_msgs_range:
+            ax.text(0.5, 0.5, f'No data for {int(comm_range)}m range', 
+                   ha='center', va='center', transform=ax.transAxes)
+            ax.set_title(f'Communication Range: {int(comm_range)}m')
+            continue
+        
+        # Get distance range and create bins
+        distances = [msg.distance for msg in all_msgs_range]
+        min_dist = min(distances)
+        # max_dist = min(max(distances), comm_range * 1.2)  # Limit to slightly beyond comm range
+        max_dist = max(distances) * 1.2
+        
+        distance_bins = np.linspace(min_dist, max_dist, num_bins + 1)
+        bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
+        
+        delivery_percentages = []
+        sample_counts = []
+        
+        # Calculate delivery percentage for each distance bin
+        for i in range(len(distance_bins)-1):
+            # Count all messages in this distance bin
+            all_in_bin = [msg for msg in all_msgs_range 
+                         if distance_bins[i] <= msg.distance < distance_bins[i+1]]
+            
+            # Count delivered messages in this distance bin (within time threshold)
+            delivered_in_bin = [msg for msg in delivered_msgs_range 
+                               if distance_bins[i] <= msg.distance < distance_bins[i+1]]
+            
+            if len(all_in_bin) > 0:
+                percentage = (len(delivered_in_bin) / len(all_in_bin)) * 100
+                delivery_percentages.append(percentage)
+                sample_counts.append(len(all_in_bin))
+            else:
+                delivery_percentages.append(0)
+                sample_counts.append(0)
+        
+        # Plot delivery percentage vs distance
+        valid_indices = [i for i, count in enumerate(sample_counts) if count > 0]
+        if valid_indices:
+            valid_centers = [bin_centers[i] for i in valid_indices]
+            valid_percentages = [delivery_percentages[i] for i in valid_indices]
+            valid_counts = [sample_counts[i] for i in valid_indices]
+            
+            # Plot line with markers
+            ax.plot(valid_centers, valid_percentages, 'bo-', linewidth=2, markersize=6, 
+                   label=f'Delivery within {time_threshold}s')
+            
+            # Add sample size annotations
+            for x, y, count in zip(valid_centers, valid_percentages, valid_counts):
+                ax.annotate(f'n={count}', (x, y), xytext=(0, 10), 
+                           textcoords='offset points', ha='center', fontsize=8,
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+        
+        # Add vertical line at communication range (asymptote)
+        ax.axvline(x=comm_range, color='red', linestyle='--', linewidth=2, alpha=0.8,
+                  label=f'Comm range ({int(comm_range)}m)')
+        
+        # Formatting
+        ax.set_xlabel('Distance (m)')
+        ax.set_ylabel('Delivery Probability (%)')
+        ax.set_title(f'Communication Range: {int(comm_range)}m')
+        ax.set_ylim(0, 105)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8)
+        
+        # Set x-axis limit to show communication range
+        ax.set_xlim(min_dist * 0.9, min(max_dist * 1.1, comm_range * 1.3))
+    
+    # Overall title
+    fig.suptitle(f'Delivery Probability vs Distance by Communication Range\n'
+                f'(Messages delivered within {time_threshold} seconds)', fontsize=16)
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(f'figures/delivery_probability_vs_distance_by_range_{int(time_threshold)}s.png',
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
+def plot_delivery_probability_vs_distance_aggregated(all_messages: list[Message], delivered_messages: list[Message], 
+                                                   time_threshold: float = 60.0, num_bins: int = 20):
+    """
+    Plot delivery probability within time_threshold vs distance for all communication ranges on one plot.
+    
+    Creates a single plot showing all communication ranges overlaid:
+    - X-axis: Distance the message has to travel
+    - Y-axis: Percentage of messages delivered within time_threshold seconds
+    - Different colored lines for each communication range
+    - Vertical lines showing each communication range limit
+    
+    Args:
+        all_messages: All created messages (including undelivered)
+        delivered_messages: Only successfully delivered messages
+        time_threshold: Time threshold in seconds for delivery probability calculation
+        num_bins: Number of distance bins to use for analysis
+    """
+    fig, ax = plt.subplots(figsize=(14, 10))
+    
+    # Get all unique communication ranges
+    comm_ranges = sorted(set(msg.communication_range for msg in all_messages), key=int)
+    colors = plt.cm.viridis(np.linspace(0, 1, len(comm_ranges)))
+    
+    # Find global distance range
+    all_distances = [msg.distance for msg in all_messages if msg.distance > 0]
+    global_min_dist = min(all_distances)
+    global_max_dist = max(all_distances)
+    
+    for idx, comm_range in enumerate(comm_ranges):
+        # Filter messages for this communication range
+        all_msgs_range = [msg for msg in all_messages if msg.communication_range == comm_range and msg.distance > 0]
+        # Filter all messages that were delivered within the time threshold (not just from delivered_messages)
+        delivered_msgs_range = [msg for msg in all_msgs_range 
+                               if msg.is_delivered == 1 and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
+        
+        if not all_msgs_range:
+            continue
+        
+        # Get distance range for this communication range
+        distances = [msg.distance for msg in all_msgs_range]
+        min_dist = min(distances)
+        max_dist = max(distances)
+        
+        # Create bins for this range (use range-specific binning for better resolution)
+        distance_bins = np.linspace(min_dist, max_dist, num_bins + 1)
+        bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
+        
+        delivery_percentages = []
+        sample_counts = []
+        
+        # Calculate delivery percentage for each distance bin
+        for i in range(len(distance_bins)-1):
+            # Count all messages in this distance bin
+            all_in_bin = [msg for msg in all_msgs_range 
+                         if distance_bins[i] <= msg.distance < distance_bins[i+1]]
+            
+            # Count delivered messages in this distance bin (within time threshold)
+            delivered_in_bin = [msg for msg in delivered_msgs_range 
+                               if distance_bins[i] <= msg.distance < distance_bins[i+1]]
+            
+            if len(all_in_bin) > 0:
+                percentage = (len(delivered_in_bin) / len(all_in_bin)) * 100
+                delivery_percentages.append(percentage)
+                sample_counts.append(len(all_in_bin))
+            else:
+                delivery_percentages.append(0)
+                sample_counts.append(0)
+        
+        # Plot delivery percentage vs distance for this communication range
+        valid_indices = [i for i, count in enumerate(sample_counts) if count > 0]
+        if valid_indices:
+            valid_centers = [bin_centers[i] for i in valid_indices]
+            valid_percentages = [delivery_percentages[i] for i in valid_indices]
+            
+            # Plot line with markers
+            ax.plot(valid_centers, valid_percentages, 'o-', 
+                   color=colors[idx], linewidth=2.5, markersize=5,
+                   label=f'{int(comm_range)}m range')
+        
+        # Add vertical line at communication range (asymptote)
+        ax.axvline(x=comm_range, color=colors[idx], linestyle='--', 
+                  linewidth=1.5, alpha=0.7)
+    
+    # Formatting
+    ax.set_xlabel('Distance (m)', fontsize=12)
+    ax.set_ylabel('Delivery Probability (%)', fontsize=12)
+    ax.set_title(f'Delivery Probability vs Distance by Communication Range\n'
+                f'(Messages delivered within {time_threshold} seconds)', fontsize=14)
+    ax.set_ylim(0, 105)
+    ax.grid(True, alpha=0.3)
+    
+    # Legend with communication range indicators
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles, labels, loc='upper right', fontsize=10, 
+             title='Communication Ranges\n(dashed lines show limits)')
+    
+    # Set reasonable x-axis limits
+    ax.set_xlim(global_min_dist * 0.95, min(global_max_dist * 1.05, max(comm_ranges) * 1.2))
+    
+    plt.tight_layout()
+    plt.savefig(f'figures/delivery_probability_vs_distance_aggregated_{int(time_threshold)}s.png',
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
 def plot_deliverability_vs_communication_range(all_messages: list[Message], delivered_messages: list[Message]):
     """Plot deliverability percentage vs communication range"""
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -1051,6 +1277,12 @@ def main():
     df = create_dataframe(messages)
     
     plot_deliverability_vs_communication_range(all_messages, messages)
+    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=10.0)  # Individual subplots
+    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=10.0)  # Aggregated plot
+    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=60.0)  # Individual subplots
+    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=60.0)  # Aggregated plot
+    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=120.0)  # Also generate for 2 minutes
+    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=120.0)  # Aggregated for 2 minutes
     plot_hop_counts(df)
     plot_distance_vs_hopcount_by_range(df)
     plot_latency_frequency_by_range(messages)

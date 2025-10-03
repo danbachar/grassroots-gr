@@ -2,8 +2,6 @@ package input;
 
 import core.*;
 import gui.DTNSimGUI;
-import movement.RandomStationaryCluster;
-
 import java.util.*;
 public class StaticHostMessageGenerator
     extends SingleMessageGenerator {
@@ -74,7 +72,7 @@ public class StaticHostMessageGenerator
       
       // Create host pairs for each bin
       binHostPairs = new ArrayList<>(binRanges.size());
-      for (var _: binRanges) {
+      for (var derp: binRanges) {
         binHostPairs.add(new Bin(this.countPerDistance, new ArrayList<>()));
       }
       

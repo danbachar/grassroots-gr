@@ -105,14 +105,15 @@ run_simulation() {
     local size=$1
     local run=$2
     local range=$3
-    local job_id="${size}_${run}_${range}"
-    
+    local mode=$4
+    local job_id="size${size}_run${run}_range${range}_mode${mode}"
+
     echo "[$(date '+%H:%M:%S')] Starting simulation ${job_id}"
 
     cd the-one
     ./one.sh -b 1  \
         "$SCENARIO_NAME-settings-${size}-${run}-${range}.txt" \
-        "$SCENARIO_NAME-comms-settings-${size}-${range}.txt"
+        "$SCENARIO_NAME-comms-settings-mode${mode}.txt"
     cd -
     
     echo "[$(date '+%H:%M:%S')] Completed simulation ${job_id}"
@@ -129,9 +130,8 @@ prepare_config_files() {
     echo "Preparing configuration files..."
 
     sed -i -e "s/Events1.hosts = .*/Events1.hosts = 0,$TOTAL_HOSTS/" \
-            -e "s/Events1.toHosts = .*/Events1.toHosts = 0,$TOTAL_HOSTS/" \
-                the-one/$SCENARIO_NAME-comms-settings.txt
-    sed -i -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_HOSTS/" \
+           -e "s/Events1.toHosts = .*/Events1.toHosts = 0,$TOTAL_HOSTS/" \
+           -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_HOSTS/" \
                 the-one/$SCENARIO_NAME-settings.txt
     for size in "${SIZES[@]}"; do
         for run in $(seq $START_RUN $NUM_RUNS); do
@@ -139,24 +139,29 @@ prepare_config_files() {
                 RANDOM_SEED=$((size+run*100+range*1000))
                 sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_${size}_run${run}_range${range}/" \
                     -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
+                    -e "s/Events1.size = .*/Events1.size = $size/" \
+                    -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
                     the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}-${range}.txt"
             done
         done
-
-        for range in "${RANGES[@]}"; do
-            sed -e "s/Events1.size = .*/Events1.size = $size/" \
-                -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
-                    the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-${size}-${range}.txt"
-        done
     done
 
-    python room/main.py --hosts $TOTAL_HOSTS --name hall --x_offset 50 --y_offset 50
+    # 0 for intra-cluster communication, 1 for inter-cluster communication
+    for mode in 0 1; do
+        sed -e "s/Events1.mode = .*/Events1.mode = $mode/" \
+            -e "s/bluetoothInterface.mode = .*/bluetoothInterface.mode = $mode/" \
+            the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-mode${mode}.txt"
+    done
+
+    # Create WKT file and png map
+    python room/main.py --name hall --x_offset 50 --y_offset 50
 }
 
 run_simulations() {
     local NUMBER_OF_SIZES=${#SIZES[@]}
     local NUMBER_OF_RANGES=${#RANGES[@]}
-    local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS))
+    local NUMBER_OF_MODES=2 # intra-cluster and inter-cluster
+    local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS * NUMBER_OF_MODES))
 
     echo "Starting parallel simulations with up to $MAX_PARALLEL_JOBS concurrent jobs..."
     echo "Total simulations to run: $TOTAL_SIMULATIONS"
@@ -164,17 +169,19 @@ run_simulations() {
     echo "Start time: $(date)"
 
     total_jobs=0
-    for size in "${SIZES[@]}"; do
-        for range in "${RANGES[@]}"; do
-            echo "Scheduling simulations for message size: $size, communication radius: $range"
-            for run in $(seq $START_RUN $NUM_RUNS); do
-                wait_for_jobs $MAX_PARALLEL_JOBS
-                run_simulation $size $run $range &
+    for mode in 0 1; do
+        for size in "${SIZES[@]}"; do
+            for range in "${RANGES[@]}"; do
+                echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $mode"
+                for run in $(seq $START_RUN $NUM_RUNS); do
+                    wait_for_jobs $MAX_PARALLEL_JOBS
+                    run_simulation $size $run $range $mode &
 
-                total_jobs=$((total_jobs + 1))
-                echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range"   
-                
-                sleep 0.1
+                    total_jobs=$((total_jobs + 1))
+                    echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range, mode=$mode"
+
+                    sleep 0.1
+                done
             done
         done
     done
