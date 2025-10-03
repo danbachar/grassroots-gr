@@ -6,7 +6,6 @@ DEFAULT_MAX_PARALLEL_JOBS=1
 DEFAULT_NUM_RUNS=50
 DEFAULT_SIZES=(247)
 SCENARIO_NAME="GR"
-DEFAULT_TOTAL_HOSTS=50
 DEFAULT_RANGES=(120)
 DEFAULT_START=1
 
@@ -18,7 +17,6 @@ print_usage() {
     echo "  -start NUM             Run number to start from (default: $DEFAULT_START)"
     echo "  -r, --ranges RANGE...  Space-separated list of ranges (default: ${DEFAULT_RANGES[*]})"
     echo "  -s, --sizes SIZE...    Space-separated list of message sizes (default: ${DEFAULT_SIZES[*]})"
-    echo "  -t, --total-hosts NUM  Total number of nodes in the simulation (default: $DEFAULT_TOTAL_HOSTS)"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "This script generates random stationary nodes for simulations."
@@ -81,14 +79,12 @@ fi
 if [ ${#RANGES[@]} -eq 0 ]; then
     RANGES=("${DEFAULT_RANGES[@]}")
 fi
-TOTAL_HOSTS=${TOTAL_HOSTS:-$DEFAULT_TOTAL_HOSTS}
 START_RUN=${START_RUN:-$DEFAULT_START}
 
 echo "Configuration:"
 echo "  Maximum parallel jobs: $MAX_PARALLEL_JOBS"
 echo "  Number of runs: $NUM_RUNS"
 echo "  Starting run number: $START_RUN"
-echo "  Total number of hosts: $TOTAL_HOSTS"
 echo "  Message sizes: [$(IFS=', '; echo "${SIZES[*]}")]"
 echo "  Interface ranges: [$(IFS=', '; echo "${RANGES[*]}")]"
 echo "  Scenario name: $SCENARIO_NAME"
@@ -129,10 +125,6 @@ wait_for_jobs() {
 prepare_config_files() {
     echo "Preparing configuration files..."
 
-    sed -i -e "s/Events1.hosts = .*/Events1.hosts = 0,$TOTAL_HOSTS/" \
-           -e "s/Events1.toHosts = .*/Events1.toHosts = 0,$TOTAL_HOSTS/" \
-           -e "s/Group1.nrofHosts = .*/Group1.nrofHosts = $TOTAL_HOSTS/" \
-                the-one/$SCENARIO_NAME-settings.txt
     for size in "${SIZES[@]}"; do
         for run in $(seq $START_RUN $NUM_RUNS); do
             for range in "${RANGES[@]}"; do
