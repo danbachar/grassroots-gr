@@ -371,6 +371,7 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
     """
     all_created_messages: list[Message] = []
     delivered_messages: list[Message] = []
+    delivered_message_ids: set[str] = set()
     
     for range_suffix in range_suffixes:
         print(f"Combining all messages for communication range {range_suffix}...")
@@ -384,13 +385,19 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
             connectivity_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_ConnectivityONEReport.txt"
             eventlog_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_EventLogReport.txt"
             
+            distance_messages = load_distance_delay_data(distance_file)
+            distance_data = {msg.id: msg for msg in distance_messages}  # Create lookup by message ID
+            
             created_messages_run = load_all_created_messages(eventlog_file, message_size, range_suffix)
             for msg in created_messages_run:
+                msg.distance = distance_data[msg.id].distance
+                msg.delivery_time = distance_data[msg.id].delivery_time
+                msg.hop_count = distance_data[msg.id].hop_count
                 msg.id = f"{msg.id}_run{run}_range{range_suffix}"
+
                 all_created_messages.append(msg)
                 created_count += 1
             
-            distance_messages = load_distance_delay_data(distance_file)
             message_sizes_and_hops = load_delivered_messages_data(delivered_file)
 
             delivered_messages_with_hops = {}
@@ -408,9 +415,13 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
                     msg.communication_range = int(range_suffix)
                     msg.id = f"{msg.id}_run{run}_range{range_suffix}"
                     delivered_messages.append(msg)  # Only add delivered messages
+                    delivered_message_ids.add(msg.id)  # Track delivered message ID
         
         print(f"Range {range_suffix}: {created_count} created, {delivered_count} delivered ({delivered_count/created_count*100:.1f}%)")
-
+    
+    for msg in all_created_messages:
+        msg.is_delivered = 1 if msg.id in delivered_message_ids else 0
+    
     return all_created_messages, delivered_messages
 
 def load_transmission_data(event_log_file: str, connectivity_file: str, delivered_messages_with_hops: dict[str, set[str]]) -> dict[str, Transmission]:
