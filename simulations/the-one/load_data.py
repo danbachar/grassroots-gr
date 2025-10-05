@@ -248,7 +248,7 @@ def parse_message_transmissions(event_log_file: str, message_ids_and_paths: dict
             neighbors = get_neighbors_at_time_for_node(connectivity_by_time, timestamp, from_node)
             node_degree = len(neighbors)
 
-            hop = Hop(from_hop.from_node, to_hop.to_node, duration, node_degree)
+            hop = Hop(to_hop.from_node, to_hop.to_node, duration, node_degree)
             transmission.add_hop(hop)
 
         transmissions[transmission.message_id] = transmission
