@@ -69,14 +69,10 @@ public class StaticHostMessageGenerator
 
       // Create bins with width <binSize>, but only for ranges that contain actual distances
       binRanges = this.calculateBinRanges(distanceOptions);
-      System.out.println("Created " + binRanges.size() + " distance bins:");
       
       // Create host pairs for each bin
       binHostPairs = new ArrayList<>(binRanges.size());
-      for (var derp: binRanges) {
-        binHostPairs.add(new Bin(this.countPerDistance, new ArrayList<>()));
-      }
-      
+      binRanges.forEach(b -> binHostPairs.add(new Bin(this.countPerDistance, new ArrayList<>())));
       this.populateHostPairs(hosts);
 
       this.firstRun = false;
