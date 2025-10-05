@@ -168,8 +168,11 @@ public class DTNSimGUI extends DTNSimUI {
 	}
 
 	public static void cancelSim() {
-		instance.simDone = true;
-		instance.closeSim();
+		// TODO: instead of this fix, how it possible that instance is null here?
+		if (instance != null) {
+			instance.simDone = true;
+			instance.closeSim();
+		}
 	}
 
 	/**
