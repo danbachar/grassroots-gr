@@ -1,7 +1,7 @@
 Scenario.name = GRScenario
 Scenario.simulateConnections = true
 Scenario.updateInterval = 1
-Scenario.endTime = 7200
+Scenario.endTime = 12000
 
 Report.nrofReports = 2
 Report.report1 = UnifiedReport
