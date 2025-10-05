@@ -108,7 +108,7 @@ run_simulation() {
 
     cd the-one
     ./one.sh -b 1  \
-        "$SCENARIO_NAME-settings-${size}-${run}-${range}.txt" \
+        "$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt" \
         "$SCENARIO_NAME-comms-settings-mode${mode}.txt"
     cd -
     
@@ -128,7 +128,7 @@ prepare_config_files() {
     # 0 for intra-cluster communication, 1 for inter-cluster communication
     for mode in 0 1; do
         sed -e "s/Events1.mode = .*/Events1.mode = $mode/" \
-            -e "s/bluetoothInterface.mode = .*/bluetoothInterface.mode = $mode/" \
+            -e "s/bluetoothInterface.communicationMode = .*/bluetoothInterface.communicationMode = $mode/" \
             the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-mode${mode}.txt"
         for size in "${SIZES[@]}"; do
             for run in $(seq $START_RUN $NUM_RUNS); do
@@ -138,7 +138,7 @@ prepare_config_files() {
                         -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
                         -e "s/Events1.size = .*/Events1.size = $size/" \
                         -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
-                        the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}-${range}.txt"
+                        the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt"
                 done
             done
         done
