@@ -8,6 +8,8 @@ DEFAULT_SIZES=(247)
 SCENARIO_NAME="GR"
 DEFAULT_RANGES=(120)
 DEFAULT_START=1
+DEFAULT_INTRACLUSTER_BINSIZE=5
+DEFAULT_INTERCLUSTER_BINSIZE=20
 
 print_usage() {
     echo "Usage: $0 [OPTIONS]"
@@ -17,12 +19,14 @@ print_usage() {
     echo "  -start NUM             Run number to start from (default: $DEFAULT_START)"
     echo "  -r, --ranges RANGE...  Space-separated list of ranges (default: ${DEFAULT_RANGES[*]})"
     echo "  -s, --sizes SIZE...    Space-separated list of message sizes (default: ${DEFAULT_SIZES[*]})"
+    echo "  -intra-bin-size NUM   Bin size for intra-cluster communication (default: $DEFAULT_INTRACLUSTER_BINSIZE)"
+    echo "  -inter-bin-size NUM   Bin size for inter-cluster communication (default: $DEFAULT_INTERCLUSTER_BINSIZE)"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "This script generates random stationary nodes for simulations."
     echo ""
     echo "Example:"
-    echo "  $0 --name GR --jobs 32 --num 25 --sizes 100 1000 10000 --total-hosts 50 --range 12 120"
+    echo "  $0 --name GR --jobs 32 --num 25 --sizes 100 1000 10000 --range 12 120"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -55,8 +59,12 @@ while [[ $# -gt 0 ]]; do
                 shift
             done
             ;;
-        -t|--total-hosts)
-            TOTAL_HOSTS="$2"
+        -intra-bin-size)
+            INTRA_CLUSTER_BIN_SIZE="$2"
+            shift 2
+            ;;
+        -inter-bin-size)
+            INTER_CLUSTER_BIN_SIZE="$2"
             shift 2
             ;;
         -h|--help)
@@ -80,6 +88,8 @@ if [ ${#RANGES[@]} -eq 0 ]; then
     RANGES=("${DEFAULT_RANGES[@]}")
 fi
 START_RUN=${START_RUN:-$DEFAULT_START}
+INTRA_CLUSTER_BIN_SIZE=${INTRA_CLUSTER_BIN_SIZE:-$DEFAULT_INTRACLUSTER_BINSIZE}
+INTER_CLUSTER_BIN_SIZE=${INTER_CLUSTER_BIN_SIZE:-$DEFAULT_INTERCLUSTER_BINSIZE}
 
 echo "Configuration:"
 echo "  Maximum parallel jobs: $MAX_PARALLEL_JOBS"
@@ -88,6 +98,8 @@ echo "  Starting run number: $START_RUN"
 echo "  Message sizes: [$(IFS=', '; echo "${SIZES[*]}")]"
 echo "  Interface ranges: [$(IFS=', '; echo "${RANGES[*]}")]"
 echo "  Scenario name: $SCENARIO_NAME"
+echo "  Intra-cluster bin size: $INTRA_CLUSTER_BIN_SIZE"
+echo "  Inter-cluster bin size: $INTER_CLUSTER_BIN_SIZE"
 
 compile() {
     cd the-one
@@ -138,6 +150,7 @@ prepare_config_files() {
                         -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
                         -e "s/Events1.size = .*/Events1.size = $size/" \
                         -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
+                        -e "s/Events1.binSize = .*/Events1.binSize = $((mode == 0 ? INTRA_CLUSTER_BIN_SIZE : INTER_CLUSTER_BIN_SIZE))/" \
                         the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt"
                 done
             done
