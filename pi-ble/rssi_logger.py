@@ -38,6 +38,7 @@ async def scan_for_peers(scan_duration: int, log_filename: str, runs: int):
 
     scanner = BleakScanner(detection_callback=detection_callback)
 
+    start_time = time.time()
     for run in range(runs):
         print(f"🔍 Starting scan run {run+1}/{runs} for {scan_duration} seconds...")
         lines = []
@@ -53,6 +54,8 @@ async def scan_for_peers(scan_duration: int, log_filename: str, runs: int):
             for line in lines:
                 f.write(line + '\n')
             print(f"🤝 Counted {len(lines)} trusted advertisements.")
+    elapsed_time = time.time() - start_time
+    print(f"⏱️ Total elapsed time: {elapsed_time:.2f} seconds")
 
 def parse_arguments():
     """Parse command line arguments"""
