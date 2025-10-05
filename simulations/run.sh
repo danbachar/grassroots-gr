@@ -125,24 +125,23 @@ wait_for_jobs() {
 prepare_config_files() {
     echo "Preparing configuration files..."
 
-    for size in "${SIZES[@]}"; do
-        for run in $(seq $START_RUN $NUM_RUNS); do
-            for range in "${RANGES[@]}"; do
-                RANDOM_SEED=$((size+run*100+range*1000))
-                sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_${size}_run${run}_range${range}/" \
-                    -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
-                    -e "s/Events1.size = .*/Events1.size = $size/" \
-                    -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
-                    the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}-${range}.txt"
-            done
-        done
-    done
-
     # 0 for intra-cluster communication, 1 for inter-cluster communication
     for mode in 0 1; do
         sed -e "s/Events1.mode = .*/Events1.mode = $mode/" \
             -e "s/bluetoothInterface.mode = .*/bluetoothInterface.mode = $mode/" \
             the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-mode${mode}.txt"
+        for size in "${SIZES[@]}"; do
+            for run in $(seq $START_RUN $NUM_RUNS); do
+                for range in "${RANGES[@]}"; do
+                    RANDOM_SEED=$((size+run*100+range*1000))
+                    sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_size${size}_run${run}_range${range}_mode${mode}/" \
+                        -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
+                        -e "s/Events1.size = .*/Events1.size = $size/" \
+                        -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
+                        the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-${size}-${run}-${range}.txt"
+                done
+            done
+        done
     done
 
     # Create WKT file and png map
