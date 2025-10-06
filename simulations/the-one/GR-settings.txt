@@ -17,17 +17,10 @@ MovementModel.warmup = 0
 MovementModel.rngSeed = 1
 Group.movementModel = RandomStationaryCluster
 Group.hostsPerCluster = 6
-Group.numberOfClusters = 10
 Group.router = EpidemicRouter
 Group.speed = 0, 0
 Group.nrofInterfaces = 1
 Group.interface1 = bluetoothInterface
-
-# Scenario.nrofHostGroups = 1
-# Group1.groupID = random_stationary_
-# Group1.nrofHosts = 25
-# Group1.offsetX = 50
-# Group1.offsetY = 50
 
 # Message related settings
 Events.nrof = 1
@@ -38,9 +31,8 @@ Events1.class = StaticHostMessageGenerator
 bluetoothInterface.type = BluetoothInterface
 bluetoothInterface.transmitRange = 120
 bluetoothInterface.transmitSpeed = 0 # Dummy setting required for simulator to properly work
-bluetoothInterface.maximumParallelConnections = 1000
 
-Events1.count = 1000
+Events1.count = 250
 Events1.binSize = 10
 Events1.interval = 1
 Events1.size = 100
