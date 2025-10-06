@@ -26,8 +26,6 @@ public class DTNSimGUI extends DTNSimUI {
 	private EventLogPanel eventLogPanel;
 	private InfoPanel infoPanel;
 
-	private static DTNSimGUI instance;
-
 	private void startGUI() {
 		try {
 			SwingUtilities.invokeAndWait(new Runnable() {
@@ -89,7 +87,6 @@ public class DTNSimGUI extends DTNSimUI {
 
 		this.main.setVisible(true);
 
-		instance = this;
 	}
 
 	@Override
@@ -164,14 +161,6 @@ public class DTNSimGUI extends DTNSimUI {
 			}
 			JOptionPane.showMessageDialog(getParentFrame(), txt,
 				"stack trace", JOptionPane.INFORMATION_MESSAGE);
-		}
-	}
-
-	public static void cancelSim() {
-		// TODO: instead of this fix, how it possible that instance is null here?
-		if (instance != null) {
-			instance.simDone = true;
-			instance.closeSim();
 		}
 	}
 

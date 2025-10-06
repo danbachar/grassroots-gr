@@ -1,7 +1,6 @@
 package input;
 
 import core.*;
-import gui.DTNSimGUI;
 import java.util.*;
 import movement.RandomStationaryCluster;
 public class StaticHostMessageGenerator
@@ -88,7 +87,7 @@ public class StaticHostMessageGenerator
     var possiblyNonEmptyBin = binHostPairs.stream().filter(bin -> bin.count > 0).findAny();
     boolean hasNonFullBin = possiblyNonEmptyBin.isPresent();
     if (!hasNonFullBin) {
-      DTNSimGUI.cancelSim();
+      SimScenario.getInstance().getWorld().cancelSim();
       this.nextEventsTime = Double.MAX_VALUE;
       return new ExternalEvent(this.nextEventsTime);
     }
