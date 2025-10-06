@@ -186,7 +186,7 @@ run_simulations() {
     echo "Start time: $(date)"
 
     total_jobs=0
-    for mode in 0 1; do
+    for mode in $(seq 0 $MODE); do
         for size in "${SIZES[@]}"; do
             for range in "${RANGES[@]}"; do
                 echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $mode"
