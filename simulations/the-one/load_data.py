@@ -11,7 +11,7 @@ class Hop:
         self.from_node_degree = from_node_degree  # Node degree of the transmitting node at timestamp
     
     def __str__(self) -> str:
-        return f"Hop({self.from_node} -> {self.to_node}, time: {self.hop_time:.3f}s, degree: {self.from_node_degree})"
+        return f"Hop({self.from_node} -> {self.to_node}"
 
 class Message:
     """
@@ -25,8 +25,9 @@ class Message:
     - delivery_time: Time taken to deliver the message
     - is_delivered: Was the message delivered successfully
     - hops: the hops the message took (aggregated from transmissions and hops)
+    - mode: inter- vs. intra-cluster message: 0 for intra, 1 for inter
     """
-    def __init__(self, message_id: str, distance: float=0, size: int=0, communication_range: int=0, peer_density: int=0, hop_count: int=0, delivery_time: float=0, is_delivered: int=0):
+    def __init__(self, message_id: str, distance: float=0, size: int=0, communication_range: int=0, peer_density: int=0, hop_count: int=0, delivery_time: float=0, is_delivered: int=0, mode: int=0):
         self.id = message_id
         self.distance = distance
         self.size = size
@@ -36,12 +37,13 @@ class Message:
         self.delivery_time = delivery_time
         self.is_delivered = is_delivered
         self.hops: list[Hop] = []
+        self.mode = mode # 0 for intra-cluster, 1 for inter-cluster
         
     def setHops(self, hops: list[Hop]) -> None:
         self.hops = hops
     
     def __str__(self):
-        return f"Message(id={self.id}, distance={self.distance}, size={self.size}, communication_range={self.communication_range}, peer_density={self.peer_density}, hop_count={self.hop_count}, delivery_time={self.delivery_time}, is_delivered={self.is_delivered})"
+        return f"Message(id={self.id}, distance={self.distance}, size={self.size}, communication_range={self.communication_range}, peer_density={self.peer_density}, hop_count={self.hop_count}, delivery_time={self.delivery_time}, is_delivered={self.is_delivered}, mode={'intra' if self.mode == 0 else 'inter'}, hops=[{', '.join(str(hop) for hop in self.hops)}])"
         
 class Transmission:
     """ Transmission represents a transmission of a message in hop
@@ -97,9 +99,12 @@ def get_host_id_from_host_name(node_name: str) -> str:
     splitted = node_name.split("_")
     return splitted[2]
 
-def load_distance_delay_data(file_path: str) -> list[Message]:
+def load_distance_delay_data(file_path: str, mode: int) -> list[Message]:
     """
     Load distance delay report data
+    Args:
+        - file_path: Path to the distance delay report file
+        - mode: 0 for intra-cluster messages, 1 for inter-cluster messages
     Format: distance, delivery_time, hop_count, message_id
     """
     messages: list[Message] = []
@@ -117,7 +122,7 @@ def load_distance_delay_data(file_path: str) -> list[Message]:
                 hop_count = int(parts[2])
                 message_id = parts[3]
                 
-                msg = Message(message_id, distance=distance, hop_count=hop_count, delivery_time=delivery_time, is_delivered=delivery_time != -1 and hop_count != -1)
+                msg = Message(message_id, distance=distance, hop_count=hop_count, delivery_time=delivery_time, is_delivered=delivery_time != -1 and hop_count != -1, mode=mode)
                 messages.append(msg)
             else:
                 print("Cannot load distance delay delay of line due to missing 4 parts, have {} parts:", line, len(parts))
@@ -362,67 +367,74 @@ def load_all_created_messages(event_log_file: str, message_size: int, communicat
     
     return created_messages
 
+def combine_run_message_data(run: int, scenario_prefix: str, message_size: int, range_suffix: str, mode: int) -> tuple[list[Message], list[Message]]:
+    messages: list[Message] = []
+    delivered_messages: list[Message] = []
+
+    distance_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_DistanceDelayReport.txt"
+    delivered_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_DeliveredMessagesReport.txt"
+    connectivity_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_ConnectivityONEReport.txt"
+    eventlog_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_EventLogReport.txt"
+    
+    distance_messages = load_distance_delay_data(distance_file, mode)
+    distance_data = {msg.id: msg for msg in distance_messages}  # Create lookup by message ID
+    
+    created_messages_run = load_all_created_messages(eventlog_file, message_size, range_suffix)
+    for msg in created_messages_run:
+        msg.distance = distance_data[msg.id].distance
+        msg.delivery_time = distance_data[msg.id].delivery_time
+        msg.hop_count = distance_data[msg.id].hop_count
+        msg.mode = mode
+        msg.id = f"{msg.id}_run{run}_range{range_suffix}"
+
+        messages.append(msg)
+    
+    message_sizes_and_hops = load_delivered_messages_data(delivered_file)
+
+    delivered_messages_with_hops = {}
+    for message_id in message_sizes_and_hops.keys(): 
+        delivered_messages_with_hops[message_id] = message_sizes_and_hops[message_id]['hops']
+    
+    message_node_degrees = load_transmission_data(eventlog_file, connectivity_file, delivered_messages_with_hops)
+    
+    for msg in distance_messages:
+        if msg.id in message_sizes_and_hops:
+            msg.size = message_sizes_and_hops[msg.id]['size']
+            msg.hops = message_node_degrees[msg.id].hops
+
+            msg.communication_range = int(range_suffix)
+            msg.id = f"{msg.id}_run{run}_range{range_suffix}"
+            delivered_messages.append(msg)
+    
+    return created_messages_run, delivered_messages
+        
 def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs=100, message_size: int = 247) -> tuple[list[Message], list[Message]]:
     """
-    Combine data to get both all created messages and only delivered messages.
-    
+    Combine data to get all messages, as well as delivered messages.
+
     Returns:
-        Tuple of (all_created_messages, delivered_messages)
+        Tuple of (all_messages, delivered_messages)
     """
-    all_created_messages: list[Message] = []
+    all_messages: list[Message] = []
     delivered_messages: list[Message] = []
     delivered_message_ids: set[str] = set()
     
-    for range_suffix in range_suffixes:
-        print(f"Combining all messages for communication range {range_suffix}...")
-        
-        delivered_count = 0
-        created_count = 0
-        
-        for run in range(1, num_runs + 1):
-            distance_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DistanceDelayReport.txt"
-            delivered_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DeliveredMessagesReport.txt"
-            connectivity_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_ConnectivityONEReport.txt"
-            eventlog_file = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_EventLogReport.txt"
+    for mode in [0,1]: # 0 for intra, 1 for inter
+        for range_suffix in range_suffixes:
+            print(f"Combining all messages for communication range {range_suffix}...")
             
-            distance_messages = load_distance_delay_data(distance_file)
-            distance_data = {msg.id: msg for msg in distance_messages}  # Create lookup by message ID
-            
-            created_messages_run = load_all_created_messages(eventlog_file, message_size, range_suffix)
-            for msg in created_messages_run:
-                msg.distance = distance_data[msg.id].distance
-                msg.delivery_time = distance_data[msg.id].delivery_time
-                msg.hop_count = distance_data[msg.id].hop_count
-                msg.id = f"{msg.id}_run{run}_range{range_suffix}"
-
-                all_created_messages.append(msg)
-                created_count += 1
-            
-            message_sizes_and_hops = load_delivered_messages_data(delivered_file)
-
-            delivered_messages_with_hops = {}
-            for message_id in message_sizes_and_hops.keys(): 
-                delivered_messages_with_hops[message_id] = message_sizes_and_hops[message_id]['hops']
-            
-            message_node_degrees = load_transmission_data(eventlog_file, connectivity_file, delivered_messages_with_hops)
-            
-            for msg in distance_messages:
-                if msg.id in message_sizes_and_hops:
-                    msg.size = message_sizes_and_hops[msg.id]['size']
-                    msg.hops = message_node_degrees[msg.id].hops
-                    delivered_count += 1
-
-                    msg.communication_range = int(range_suffix)
-                    msg.id = f"{msg.id}_run{run}_range{range_suffix}"
-                    delivered_messages.append(msg)  # Only add delivered messages
-                    delivered_message_ids.add(msg.id)  # Track delivered message ID
-        
-        print(f"Range {range_suffix}: {created_count} created, {delivered_count} delivered ({delivered_count/created_count*100:.1f}%)")
+            for run in range(1, num_runs + 1):
+                print(f" Processing run {run}/{num_runs}...")
+                created_messages_run, delivered_messages_run = combine_run_message_data(run, scenario_prefix, message_size, str(range_suffix), mode)
+                
+                all_messages.extend(created_messages_run)
+                delivered_messages.extend(delivered_messages_run)
+                delivered_message_ids.update(msg.id for msg in delivered_messages_run)
     
-    for msg in all_created_messages:
+    for msg in all_messages:
         msg.is_delivered = 1 if msg.id in delivered_message_ids else 0
     
-    return all_created_messages, delivered_messages
+    return all_messages, delivered_messages
 
 def load_transmission_data(event_log_file: str, connectivity_file: str, delivered_messages_with_hops: dict[str, set[str]]) -> dict[str, Transmission]:
     """
@@ -442,44 +454,46 @@ def load_transmission_data(event_log_file: str, connectivity_file: str, delivere
     
     return transmissions
 
-def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, message_size: int = 247):
-    # identifiers can be:
-    # DD for distance delay
-    # DM for delivered messages
-    # EL for event log
-    # CO for connectivity ONE
+def split_unified_report_to_report_paths(unified_report_file_path: str, distance_file_path: str, delivered_file_path: str, connectivity_file_path: str, eventlog_file_path: str):
+    # report identifiers can be:
+    # DD for distance delay report
+    # DM for delivered messages report
+    # EL for event log report
+    # CO for connectivity ONE report
     distance_delay_row_identifier="DD"
     delivered_messages_row_identifier="DM"
     connectivity_row_identifier="CO"
     event_log_row_identifier="EL"
 
-    for range_suffix in ranges:        
-        for run in range(1, runs + 1):
-            distance_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DistanceDelayReport.txt"
-            delivered_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_DeliveredMessagesReport.txt"
-            connectivity_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_ConnectivityONEReport.txt"
-            eventlog_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_EventLogReport.txt"
-            unified_report_file_path = f"reports_data/{scenario_prefix}_{message_size}_run{run}_range{range_suffix}_UnifiedReport.txt"
+    with open(unified_report_file_path, "r") as unified_report_file, open(distance_file_path, "w") as distance_file, open(delivered_file_path, "w") as delivered_file, open(connectivity_file_path, "w") as connectivity_file, open(eventlog_file_path, "w") as eventlog_file:
+        for line in unified_report_file:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
             
-            with open(unified_report_file_path, "r") as unified_report_file, open(distance_file_path, "w") as distance_file,  open(delivered_file_path, "w") as delivered_file, open(connectivity_file_path, "w") as connectivity_file, open(eventlog_file_path, "w") as eventlog_file:
-                for line in unified_report_file:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-                    
-                    report_identifier, line = line.split(": ")
+            report_identifier, line = line.split(": ")
 
-                    if report_identifier == distance_delay_row_identifier:
-                        distance_file.write(line + "\n")
-                    elif report_identifier == delivered_messages_row_identifier:
-                        delivered_file.write(line + "\n")
-                    elif report_identifier == connectivity_row_identifier:
-                        connectivity_file.write(line + "\n")
-                    elif report_identifier == event_log_row_identifier:
-                        eventlog_file.write(line + "\n")
-                    else:
-                        raise ValueError(f"got unexpected report identifier: {report_identifier}")
+            if report_identifier == distance_delay_row_identifier:
+                distance_file.write(line + "\n")
+            elif report_identifier == delivered_messages_row_identifier:
+                delivered_file.write(line + "\n")
+            elif report_identifier == connectivity_row_identifier:
+                connectivity_file.write(line + "\n")
+            elif report_identifier == event_log_row_identifier:
+                eventlog_file.write(line + "\n")
+            else:
+                raise ValueError(f"got unexpected report identifier: {report_identifier}")
 
+def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, message_size: int = 247):
+    for range_suffix in ranges:
+        for run in range(1, runs + 1):
+            for mode in [0,1]: # 0 for intra, 1 for inter
+                distance_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_DistanceDelayReport.txt"
+                delivered_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_DeliveredMessagesReport.txt"
+                connectivity_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_ConnectivityONEReport.txt"
+                eventlog_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_EventLogReport.txt"
+                unified_report_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_UnifiedReport.txt"
+                split_unified_report_to_report_paths(unified_report_file_path, distance_file_path, delivered_file_path, connectivity_file_path, eventlog_file_path)
 def main():
     DEFAULT_RANGES = [12, 50, 120]
     DEFAULT_NUM_RUNS = 50
