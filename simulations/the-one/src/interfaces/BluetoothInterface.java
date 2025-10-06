@@ -4,8 +4,6 @@ import core.*;
 import input.StaticHostMessageGenerator;
 import input.StaticHostMessageGenerator.Mode;
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
 import movement.RandomStationaryCluster;
 import util.Room;
 
@@ -15,10 +13,8 @@ public class BluetoothInterface extends NetworkInterface {
     /**
      * Maximum number of parallel connections allowed -setting id ({@value} ).
      */
-    public static final String PARALLEL_CONNECTIONS_S = "maximumParallelConnections";
     public static final String COMMUNICATION_MODE_S = "communicationMode";
 
-    protected final int maximumParallelConnections;
     protected final StaticHostMessageGenerator.Mode mode;
 
     /**
@@ -26,7 +22,6 @@ public class BluetoothInterface extends NetworkInterface {
      */
     public BluetoothInterface(Settings s) {
         super(s);
-        maximumParallelConnections = s.getInt(PARALLEL_CONNECTIONS_S);
         this.mode = Mode.getByValue(s.getInt(COMMUNICATION_MODE_S));
     }
 
@@ -37,7 +32,6 @@ public class BluetoothInterface extends NetworkInterface {
      */
     public BluetoothInterface(BluetoothInterface ni) {
         super(ni);
-        maximumParallelConnections = ni.maximumParallelConnections;
         this.mode = ni.mode;
     }
 
@@ -49,21 +43,17 @@ public class BluetoothInterface extends NetworkInterface {
      * Tries to connect this host to another host. The other host must be
      * active, within range of this host, and have a clear line of sight of it for
      * the connection to succeed.
-     * For simplification, assume both hosts are constrained to support a maximum
-     * amount of parallel connections, and that all network interfaces are
-     * Bluetooth interface (as in the simulation this is the case)
-     * 
+     * For simplification, assume both hosts' have only bluetooth network interfaces
+     *
      * @param anotherInterface The interface to connect to
      */
     public void connect(NetworkInterface anotherInterface) {
-        String otherID = anotherInterface.getHost().groupId + anotherInterface.getHost().getAddress();
         if (isScanning()
                 && anotherInterface.getHost().isRadioActive()
                 && isWithinRange(anotherInterface)
                 && canCommunicateWith(anotherInterface)
                 && !isConnected(anotherInterface)
-                && (this != anotherInterface)
-                && (hasConnectionCapacity(anotherInterface))) {
+                && (this != anotherInterface)) {
             // perform costly line of sight check only if all the other conditions hold
             boolean hasClearLineOfSight = hasFreeLineOfSight(this.getHost(), anotherInterface.getHost());
 
@@ -73,13 +63,6 @@ public class BluetoothInterface extends NetworkInterface {
                 connect(con, anotherInterface);
             }
         }
-    }
-
-    private boolean hasConnectionCapacity(NetworkInterface anotherInterface) {
-        // assume the other interface is also BluetoothInterface
-        // as this function is only called unidirectionally
-        return this.connections.size() < this.maximumParallelConnections
-                && anotherInterface.getConnections().size() < this.maximumParallelConnections;
     }
 
     private boolean canCommunicateWith(NetworkInterface anotherInterface) {

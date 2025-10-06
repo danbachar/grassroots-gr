@@ -4,16 +4,14 @@
  */
 package core;
 
+import static core.Constants.DEBUG;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import movement.MovementModel;
 import movement.Path;
 import routing.MessageRouter;
 import routing.util.RoutingInfo;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-
-import static core.Constants.DEBUG;
 
 /**
  * A DTN capable host.
@@ -36,6 +34,8 @@ public class DTNHost implements Comparable<DTNHost> {
 	private List<MovementListener> movListeners;
 	private List<NetworkInterface> net;
 	private ModuleCommunicationBus comBus;
+
+	private List<Connection> connections;
 
 	static {
 		DTNSim.registerForReset(DTNHost.class.getCanonicalName());
@@ -62,6 +62,7 @@ public class DTNHost implements Comparable<DTNHost> {
 		this.groupId = groupId;
 		this.name = groupId+address;
 		this.net = new ArrayList<NetworkInterface>();
+		this.connections = new ArrayList<Connection>();
 
 		for (NetworkInterface i : interf) {
 			NetworkInterface ni = i.replicate();
@@ -168,10 +169,12 @@ public class DTNHost implements Comparable<DTNHost> {
 	 */
 	public void connectionUp(Connection con) {
 		this.router.changedConnection(con);
+		this.connections.add(con);
 	}
 
 	public void connectionDown(Connection con) {
 		this.router.changedConnection(con);
+		this.connections.remove(con);
 	}
 
 	/**
@@ -179,13 +182,14 @@ public class DTNHost implements Comparable<DTNHost> {
 	 * @return a copy of the list of connections this host has with other hosts
 	 */
 	public List<Connection> getConnections() {
-		List<Connection> lc = new ArrayList<Connection>();
+		// List<Connection> lc = new ArrayList<Connection>();
 
-		for (NetworkInterface i : net) {
-			lc.addAll(i.getConnections());
-		}
+		// for (NetworkInterface i : net) {
+		// 	lc.addAll(i.getConnections());
+		// }
 
-		return lc;
+		// return lc;
+		return this.connections;
 	}
 
 	/**
