@@ -1,7 +1,6 @@
 package input;
 
 import core.*;
-import gui.DTNSimGUI;
 import java.util.*;
 import movement.RandomStationaryCluster;
 public class StaticHostMessageGenerator
@@ -85,10 +84,10 @@ public class StaticHostMessageGenerator
     int from;
     int to;
 
-    var countNonEmptyBins = binHostPairs.stream().filter(bin -> bin.count > 0).count();
-    boolean hasNonFullBin = countNonEmptyBins > 0;
+    var possiblyNonEmptyBin = binHostPairs.stream().filter(bin -> bin.count > 0).findAny();
+    boolean hasNonFullBin = possiblyNonEmptyBin.isPresent();
     if (!hasNonFullBin) {
-      DTNSimGUI.cancelSim();
+      SimScenario.getInstance().getWorld().cancelSim();
       this.nextEventsTime = Double.MAX_VALUE;
       return new ExternalEvent(this.nextEventsTime);
     }
@@ -118,24 +117,17 @@ public class StaticHostMessageGenerator
   }
 
   private HostPair drawHostPair() {
-    List<Bin> availableBins = new ArrayList<>();
-    for (var distanceBin: binHostPairs) {
-      var binNeedsMoreMessages = distanceBin.count > 0;
-      if (binNeedsMoreMessages) {
-        availableBins.add(distanceBin);
-      }
-    }
-    
-    if (availableBins.isEmpty()) {
+    // randomly pick from available bins
+    var possiblyNonEmptyRandomBin = binHostPairs.stream().filter(bin -> bin.count > 0).findAny();
+    if (possiblyNonEmptyRandomBin.isEmpty()) {
       return null;
     }
     
-    // randomly pick from available bins
-    Bin selectedBin = availableBins.get(rng.nextInt(availableBins.size()));
+    Bin selectedBin = possiblyNonEmptyRandomBin.get();
     
     // randomly pick an available pair from the bin and decrement the counter of more messages needed in the bin
-    HostPair selectedPair = selectedBin.pairs.get(rng.nextInt(selectedBin.pairs.size()));
-    selectedBin.count--;
+    HostPair selectedPair = selectedBin.pairs.stream().findAny().orElseThrow(); // the throw will only happen if bin has no pairs -> cannot actually happen
+    selectedBin.decrementCount();
     
     return selectedPair;
   }

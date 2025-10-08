@@ -913,8 +913,9 @@ def plot_correlation_heatmap(messages: list[Message]):
     plt.close()
 
 def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
-    """Plot frequency of created messages per distance"""
-    fig, ax = plt.subplots(figsize=(12, 8))
+    """Plot frequency of created messages per distance with mode analysis"""
+    # Create a figure with subplots: original plot + mode comparison
+    fig = plt.figure(figsize=(16, 12))
     
     # Extract distances from all messages (including failed deliveries)
     distances = [msg.distance for msg in messages if msg.distance > 0]
@@ -929,12 +930,15 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
     bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
     bin_width = distance_bins[1] - distance_bins[0]
     
+    # Subplot 1: Original message frequency plot
+    ax1 = plt.subplot(2, 2, (1, 2))  # Top row, spans both columns
+    
     message_counts = []
     for i in range(len(distance_bins)-1):
         count = sum(1 for d in distances if distance_bins[i] <= d < distance_bins[i+1])
         message_counts.append(count)
     
-    bars = ax.bar(bin_centers, message_counts, 
+    bars = ax1.bar(bin_centers, message_counts, 
                   width=bin_width * 0.8, 
                   alpha=0.7, 
                   color='skyblue',
@@ -944,7 +948,7 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
     for bar, count in zip(bars, message_counts):
         if count > 0:
             height = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2., height,
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
                    f'{count}',
                    ha='center', va='bottom',
                    fontsize=9)
@@ -959,20 +963,92 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
     stats_text += f"Std deviation: {std_distance:.1f} m\n"
     stats_text += f"Distance range: {min_dist:.1f} - {max_dist:.1f} m"
     
-    ax.text(0.98, 0.98, stats_text,
-            transform=ax.transAxes,
+    ax1.text(0.98, 0.98, stats_text,
+            transform=ax1.transAxes,
             verticalalignment='top',
             horizontalalignment='right',
             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
             fontsize=10)
     
-    ax.set_xlabel('Distance (m)', fontsize=12)
-    ax.set_ylabel('Number of Messages', fontsize=12)
-    ax.set_title('Message Creation Frequency by Distance', fontsize=14)
-    ax.grid(True, alpha=0.3, axis='y')
+    ax1.set_xlabel('Distance (m)', fontsize=12)
+    ax1.set_ylabel('Number of Messages', fontsize=12)
+    ax1.set_title('Message Creation Frequency by Distance', fontsize=14)
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
     
-    # Constrain x-axis to found bins
-    ax.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
+    # Subplot 2: Intra-cluster messages
+    ax2 = plt.subplot(2, 2, 3)
+    
+    intra_messages = [msg for msg in messages if msg.distance > 0 and msg.mode == 0]
+    intra_distances = [msg.distance for msg in intra_messages]
+    
+    if intra_distances:
+        intra_counts = []
+        for i in range(len(distance_bins)-1):
+            count = sum(1 for d in intra_distances if distance_bins[i] <= d < distance_bins[i+1])
+            intra_counts.append(count)
+        
+        ax2.bar(bin_centers, intra_counts,
+               width=bin_width * 0.8,
+               alpha=0.7,
+               color='lightgreen',
+               edgecolor='darkgreen',
+               linewidth=0.5)
+        
+        ax2.set_title('Intra-cluster Messages', fontsize=12, color='darkgreen')
+        ax2.text(0.02, 0.98, f'Total: {len(intra_distances):,}',
+                transform=ax2.transAxes,
+                verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8),
+                fontsize=10)
+    else:
+        ax2.text(0.5, 0.5, 'No intra-cluster\nmessages found',
+                transform=ax2.transAxes,
+                ha='center', va='center',
+                fontsize=12)
+        ax2.set_title('Intra-cluster Messages', fontsize=12, color='darkgreen')
+    
+    ax2.set_xlabel('Distance (m)', fontsize=10)
+    ax2.set_ylabel('Number of Messages', fontsize=10)
+    ax2.grid(True, alpha=0.3, axis='y')
+    ax2.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
+    
+    # Subplot 3: Inter-cluster messages
+    ax3 = plt.subplot(2, 2, 4)
+    
+    inter_messages = [msg for msg in messages if msg.distance > 0 and msg.mode == 1]
+    inter_distances = [msg.distance for msg in inter_messages]
+    
+    if inter_distances:
+        inter_counts = []
+        for i in range(len(distance_bins)-1):
+            count = sum(1 for d in inter_distances if distance_bins[i] <= d < distance_bins[i+1])
+            inter_counts.append(count)
+        
+        ax3.bar(bin_centers, inter_counts,
+               width=bin_width * 0.8,
+               alpha=0.7,
+               color='lightcoral',
+               edgecolor='darkred',
+               linewidth=0.5)
+        
+        ax3.set_title('Inter-cluster Messages', fontsize=12, color='darkred')
+        ax3.text(0.02, 0.98, f'Total: {len(inter_distances):,}',
+                transform=ax3.transAxes,
+                verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.8),
+                fontsize=10)
+    else:
+        ax3.text(0.5, 0.5, 'No inter-cluster\nmessages found',
+                transform=ax3.transAxes,
+                ha='center', va='center',
+                fontsize=12)
+        ax3.set_title('Inter-cluster Messages', fontsize=12, color='darkred')
+    
+    ax3.set_xlabel('Distance (m)', fontsize=10)
+    ax3.set_ylabel('Number of Messages', fontsize=10)
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
     
     plt.tight_layout()
     plt.savefig('figures/message-distance-distribution.png', 

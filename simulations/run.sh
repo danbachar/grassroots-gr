@@ -10,10 +10,12 @@ DEFAULT_RANGES=(120)
 DEFAULT_START=1
 DEFAULT_INTRACLUSTER_BINSIZE=5
 DEFAULT_INTERCLUSTER_BINSIZE=20
+DEFAULT_MODE=1
 
 print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
+    echo "  -m, --mode MODE        Cluster communicatoin mode: 0 to allow only intra-cluster communication, 1 to also allow inter-cluster communication (default: $DEFAULT_MODE)"
     echo "  -j, --jobs NUM         Maximum number of parallel jobs (default: $DEFAULT_MAX_PARALLEL_JOBS)"
     echo "  -n, --num NUM          Number of runs per size (default: $DEFAULT_NUM_RUNS)"
     echo "  -start NUM             Run number to start from (default: $DEFAULT_START)"
@@ -33,6 +35,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         -j|--jobs)
             MAX_PARALLEL_JOBS="$2"
+            shift 2
+            ;;
+        -m|--mode)
+            MODE="$2"
             shift 2
             ;;
         -n|--num)
@@ -87,11 +93,18 @@ fi
 if [ ${#RANGES[@]} -eq 0 ]; then
     RANGES=("${DEFAULT_RANGES[@]}")
 fi
+if [ -z "$MODE" ]; then
+    MODE=$DEFAULT_MODE
+elif [[ "$MODE" != 0 && "$MODE" != 1 ]]; then
+    echo "Invalid mode: $MODE. Allowed values are 0 (intra) or 1 (inter)."
+    exit 1
+fi
 START_RUN=${START_RUN:-$DEFAULT_START}
 INTRA_CLUSTER_BIN_SIZE=${INTRA_CLUSTER_BIN_SIZE:-$DEFAULT_INTRACLUSTER_BINSIZE}
 INTER_CLUSTER_BIN_SIZE=${INTER_CLUSTER_BIN_SIZE:-$DEFAULT_INTERCLUSTER_BINSIZE}
 
 echo "Configuration:"
+echo "  Communication mode: $MODE"
 echo "  Maximum parallel jobs: $MAX_PARALLEL_JOBS"
 echo "  Number of runs: $NUM_RUNS"
 echo "  Starting run number: $START_RUN"
@@ -164,7 +177,7 @@ prepare_config_files() {
 run_simulations() {
     local NUMBER_OF_SIZES=${#SIZES[@]}
     local NUMBER_OF_RANGES=${#RANGES[@]}
-    local NUMBER_OF_MODES=2 # intra-cluster and inter-cluster
+    local NUMBER_OF_MODES=$((MODE+1)) # mode is 0 or 1, so add 1 to get count
     local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS * NUMBER_OF_MODES))
 
     echo "Starting parallel simulations with up to $MAX_PARALLEL_JOBS concurrent jobs..."
@@ -173,7 +186,7 @@ run_simulations() {
     echo "Start time: $(date)"
 
     total_jobs=0
-    for mode in 0 1; do
+    for mode in $(seq 0 $MODE); do
         for size in "${SIZES[@]}"; do
             for range in "${RANGES[@]}"; do
                 echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $mode"
