@@ -93,16 +93,14 @@ public class RandomStationaryCluster extends MovementModel {
         Coord randomLocation;
         boolean inRoom, inCluster;
         Coord start = this.hostCluster.getClusterStart();
+        double startX = start.getX();
+        double startY = start.getY();
         double clusterSize = this.hostCluster.getClusterSize();
-//        double endX = start.getX() + clusterSize;
-//        double endY = start.getY() + clusterSize;
         do {
-            double x = start.getX() + rng.nextDouble() * clusterSize;
-            double y = start.getY() + rng.nextDouble() * clusterSize;
+            double x = startX + rng.nextDouble() * clusterSize;
+            double y = startY + rng.nextDouble() * clusterSize;
             randomLocation = new Coord(x, y);
-            // inRoom = this.constrainedRoom.isCoordinateInRoom(randomLocation);
             inCluster = this.hostCluster.coordInCluster(randomLocation);
-            // now why at 8
         } while (!inCluster);
 
         return randomLocation;
