@@ -144,9 +144,8 @@ public class UnifiedReport extends Report implements ConnectionListener, Message
     }
 
     public void newMessage(Message m) {
-        // EventLogReport functionality
         write(EL_PREFIX + getSimTime() + " " + StandardEventsReader.CREATE + 
-              " " + m.getFrom() + " " + m);
+              " " + m.getFrom() + " " + m.getTo() + " " + m);
 
         // DistanceDelayReport and DeliveredMessagesReport functionality
         if (isWarmup()) {
