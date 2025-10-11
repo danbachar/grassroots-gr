@@ -7,11 +7,11 @@ public class StaticHostMessageGenerator
     extends SingleMessageGenerator {
   public static final String COUNT_PER_PAIR_S = "count";
   public static final String MODE_S = "mode";
-  protected final int countPerPair;
-  protected final Mode mode;
+  private final int countPerPair;
+  private final Mode mode;
 
-  protected boolean firstRun = true;
-  protected static Queue<HostPair> messageQueue = null;
+  private boolean firstRun = true;
+  private static List<HostPair> pairs = null;
 
   public enum Mode {
     INTRA_CLUSTER,
@@ -23,7 +23,20 @@ public class StaticHostMessageGenerator
 
   }
 
-  private record HostPair(DTNHost fromHost, DTNHost toHost) {}
+  private class HostPair {
+    public final DTNHost fromHost;
+    public final DTNHost toHost;
+    public int count;
+    public HostPair(DTNHost fromHost, DTNHost toHost, int count) {
+      this.fromHost = fromHost;
+      this.toHost = toHost;
+      this.count = count;
+    }
+
+    public int decrementCount() {
+      return --this.count;
+    }
+  }
 
   static {
     DTNSim.registerForReset(StaticHostMessageGenerator.class.getCanonicalName());
@@ -31,7 +44,7 @@ public class StaticHostMessageGenerator
   }
 
   public static void reset() {
-    messageQueue = null;
+    pairs = null;
   }
 
   public StaticHostMessageGenerator(Settings s) {
@@ -44,7 +57,7 @@ public class StaticHostMessageGenerator
   public ExternalEvent nextEvent() {
     if (this.firstRun) {
       var hosts = SimScenario.getInstance().getHosts();
-      messageQueue = new LinkedList<>();
+      pairs = new ArrayList<>();
       
       // Create COUNT messages for each valid host pair
       for (DTNHost fromHost : hosts) {
@@ -55,15 +68,13 @@ public class StaticHostMessageGenerator
                                  (((RandomStationaryCluster) fromHost.getMovementModel()).isInSameCluster(toHost));
             
             if (isValidPair) {
-              for (int i = 0; i < this.countPerPair; i++) {
-                messageQueue.add(new HostPair(fromHost, toHost));
-              }
+              pairs.add(new HostPair(fromHost, toHost, this.countPerPair));
             }
           }
         }
       }
       
-      System.out.println("Generated " + messageQueue.size() + " messages for " + 
+      System.out.println("Generated " + pairs.size() + " messages for " + 
                         (this.mode == Mode.INTER_CLUSTER ? "INTER" : "INTRA") + 
                         " cluster mode with " + this.countPerPair + " messages per host pair");
       
@@ -71,22 +82,29 @@ public class StaticHostMessageGenerator
     }
 
     // Check if we have any messages left to send
-    if (messageQueue.isEmpty()) {
+    var selectedPair = pairs.stream()
+        .filter(pair -> pair.count > 0)
+        .findAny();
+
+    if (selectedPair.isEmpty()) {
       SimScenario.getInstance().getWorld().cancelSim();
       this.nextEventsTime = Double.MAX_VALUE;
       return new ExternalEvent(this.nextEventsTime);
     }
 
-    HostPair selectedPair = messageQueue.poll();
-    
-    int from = selectedPair.fromHost.getAddress();
-    int to = selectedPair.toHost.getAddress();
+    var pair = selectedPair.get();
+
+    int from = pair.fromHost.getAddress();
+    int to = pair.toHost.getAddress();
     int msgSize = drawMessageSize();
     int interval = drawNextEventTimeDiff();
-    int responseSize = 0; /* zero stands for one way messages */
+    int newCount = pair.decrementCount();
+    if (newCount <= 0) {
+      pairs.remove(pair);
+    }
 
     MessageCreateEvent mce = new MessageCreateEvent(from, to, this.getID(),
-        msgSize, responseSize, this.nextEventsTime);
+        msgSize, 0, this.nextEventsTime);
     this.nextEventsTime += interval;
 
     if (this.msgTime != null && this.nextEventsTime > this.msgTime[1]) {
