@@ -7,11 +7,7 @@ package report;
 import java.util.HashMap;
 import java.util.List;
 
-import core.ConnectionListener;
-import core.Coord;
-import core.DTNHost;
-import core.Message;
-import core.MessageListener;
+import core.*;
 import input.StandardEventsReader;
 
 /**
@@ -21,7 +17,7 @@ import input.StandardEventsReader;
  * - EventLogReport: Event logging
  * - ConnectivityONEReport: Connection events
  */
-public class UnifiedReport extends Report implements ConnectionListener, MessageListener {
+public class UnifiedReport extends Report implements ConnectionListener, MessageListener, MovementListener {
     
     // Section headers for different report types
     private static final String DISTANCE_DELAY_HEADER = "# DISTANCE_DELAY_SECTION";
@@ -37,7 +33,8 @@ public class UnifiedReport extends Report implements ConnectionListener, Message
     private static final String DM_PREFIX = "DM: ";       // Delivered Messages
     private static final String EL_PREFIX = "EL: ";       // Event Log
     private static final String CO_PREFIX = "CO: ";       // Connectivity
-    
+    private static final String HL_PREFIX = "HL: ";       // Host Location
+
     // From EventLogReport constants
     public static final String MESSAGE_TRANS_RELAYED = "R";
     public static final String MESSAGE_TRANS_DELIVERED = "D";
@@ -223,6 +220,16 @@ public class UnifiedReport extends Report implements ConnectionListener, Message
                   " -1 -1 " + id);
         }
         super.done();
+    }
+
+    @Override
+    public void newDestination(DTNHost host, Coord destination, double speed) {
+        // not used
+    }
+
+    @Override
+    public void initialLocation(DTNHost host, Coord location) {
+        write(HL_PREFIX + host.groupId + host.getAddress() + " " + host.getLocation());
     }
 
     /**
