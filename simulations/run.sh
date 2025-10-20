@@ -206,6 +206,7 @@ run_simulations() {
                         echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range, mode=$mode, max_node_degree=$max_degree"
 
                     sleep 0.1
+                    done
                 done
             done
         done
