@@ -309,6 +309,14 @@ abstract public class NetworkInterface implements ModuleCommunicationListener {
 	public abstract void connect(NetworkInterface anotherInterface);
 
 	/**
+	 * Check if this interface can connect to another interface.
+	 *
+	 * Overload this in a derived class.
+	 * @param anotherInterface The interface to check connection to
+	 */
+	public abstract boolean canConnect(NetworkInterface anotherInterface);
+
+	/**
 	 * Connects this host to another host. The derived class should check
 	 * that all pre-requisites for making a connection are satisfied before
 	 * actually connecting.

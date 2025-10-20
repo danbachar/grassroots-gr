@@ -4,13 +4,9 @@
  */
 package routing;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
+import java.util.stream.Collectors;
+
 import core.Application;
 import core.Connection;
 import core.DTNHost;
@@ -669,6 +665,11 @@ public abstract class MessageRouter {
 	 * @return The replicate
 	 */
 	public abstract MessageRouter replicate();
+
+	public void purge() {
+		var messageIDs = new ArrayList<>(this.messages.keySet());
+		messageIDs.forEach(messageID -> deleteMessage(messageID, true));
+	}
 
 	/**
 	 * Returns a String presentation of this router

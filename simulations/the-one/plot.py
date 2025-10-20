@@ -1,8 +1,11 @@
+from typing import Optional
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-from load_data import Message, Hop # Hop is needed, otherwise the pickle load won't work
+from load_data import Message, Hop, HostInfo # Hop and HostInfo are needed, otherwise the pickle load won't work
+import os
+import matplotlib.pyplot as plt
 
 # Disclaimer: Claude 4.0 helped writing this code, especially in plotting. 
 # Data processing and loading was done by us
@@ -17,7 +20,10 @@ def create_dataframe(messages: list[Message]):
                 'Hop_Count': len(msg.hops),
                 'Distance': msg.distance,
                 'Delivery_Time': msg.delivery_time,
-                'Message_Size': msg.size
+                'Message_Size': msg.size,
+                'Source': msg.source,
+                'Target': msg.target,
+                'Mode': 'intra' if msg.mode == 0 else 'inter'
             })
     return pd.DataFrame(data)
 
@@ -864,6 +870,53 @@ def plot_hop_latency_vs_node_degree(messages: list[Message]):
                 bbox_inches='tight', dpi=300)
     plt.close()
 
+def plot_max_degree_vs_throughput(messages: list[Message]):
+    """Plot maximum allowed node degree vs achieved throughput, with one curve per communication radius"""
+    
+    # Filter delivered messages within time threshold
+    # delivered_messages = [msg for msg in messages if msg.is_delivered and msg.delivery_time <= time_threshold]
+    delivered_messages = messages
+    
+    # Group by communication_range and max_degree
+    throughput_data = {}
+    for msg in delivered_messages:
+        key = (msg.communication_range, msg.max_degree)
+        if key not in throughput_data:
+            throughput_data[key] = []
+        # Throughput as data delivered per unit time (bytes/second)
+        # Since delivery_time is the time for this message, throughput = size / delivery_time
+        if msg.delivery_time > 0:
+            throughput = msg.size / msg.delivery_time
+            throughput_data[key].append(throughput)
+    
+    # Calculate average throughput per group
+    ranges = sorted(set(k[0] for k in throughput_data.keys()))
+    max_degrees = sorted(set(k[1] for k in throughput_data.keys()))
+    
+    plt.figure(figsize=(12, 8))
+    
+    for comm_range in ranges:
+        x_vals = []
+        y_vals = []
+        for max_deg in max_degrees:
+            key = (comm_range, max_deg)
+            if key in throughput_data and throughput_data[key]:
+                avg_throughput = np.mean(throughput_data[key])
+                x_vals.append(max_deg)
+                y_vals.append(avg_throughput)
+        
+        if x_vals:
+            plt.plot(x_vals, y_vals, 'o-', label=f'Range {comm_range}m', linewidth=2, markersize=8)
+    
+    plt.xlabel('Maximum Allowed Node Degree')
+    plt.ylabel('Average Throughput (bytes/second)')
+    plt.title(f'Average Throughput vs Maximum Node Degree')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('figures/max_degree_vs_throughput.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
 def plot_correlation_heatmap(messages: list[Message]):
     data = []
     for msg in messages:
@@ -945,6 +998,7 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
                   edgecolor='navy',
                   linewidth=0.5)
     
+    # Add count labels on top of bars
     for bar, count in zip(bars, message_counts):
         if count > 0:
             height = bar.get_height()
@@ -988,12 +1042,21 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
             count = sum(1 for d in intra_distances if distance_bins[i] <= d < distance_bins[i+1])
             intra_counts.append(count)
         
-        ax2.bar(bin_centers, intra_counts,
-               width=bin_width * 0.8,
-               alpha=0.7,
-               color='lightgreen',
-               edgecolor='darkgreen',
-               linewidth=0.5)
+        bars_intra = ax2.bar(bin_centers, intra_counts,
+                            width=bin_width * 0.8,
+                            alpha=0.7,
+                            color='lightgreen',
+                            edgecolor='darkgreen',
+                            linewidth=0.5)
+        
+        # Add count labels on top of bars for intra-cluster
+        for bar, count in zip(bars_intra, intra_counts):
+            if count > 0:
+                height = bar.get_height()
+                ax2.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{count}',
+                       ha='center', va='bottom',
+                       fontsize=8)
         
         ax2.set_title('Intra-cluster Messages', fontsize=12, color='darkgreen')
         ax2.text(0.02, 0.98, f'Total: {len(intra_distances):,}',
@@ -1025,12 +1088,21 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
             count = sum(1 for d in inter_distances if distance_bins[i] <= d < distance_bins[i+1])
             inter_counts.append(count)
         
-        ax3.bar(bin_centers, inter_counts,
-               width=bin_width * 0.8,
-               alpha=0.7,
-               color='lightcoral',
-               edgecolor='darkred',
-               linewidth=0.5)
+        bars_inter = ax3.bar(bin_centers, inter_counts,
+                            width=bin_width * 0.8,
+                            alpha=0.7,
+                            color='lightcoral',
+                            edgecolor='darkred',
+                            linewidth=0.5)
+        
+        # Add count labels on top of bars for inter-cluster
+        for bar, count in zip(bars_inter, inter_counts):
+            if count > 0:
+                height = bar.get_height()
+                ax3.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{count}',
+                       ha='center', va='bottom',
+                       fontsize=8)
         
         ax3.set_title('Inter-cluster Messages', fontsize=12, color='darkred')
         ax3.text(0.02, 0.98, f'Total: {len(inter_distances):,}',
@@ -1098,7 +1170,7 @@ def plot_delivery_probability_vs_distance_by_range(all_messages: list[Message], 
         all_msgs_range = [msg for msg in all_messages if msg.communication_range == comm_range and msg.distance > 0]
         # Filter all messages that were delivered within the time threshold (not just from delivered_messages)
         delivered_msgs_range = [msg for msg in all_msgs_range 
-                               if msg.is_delivered == 1 and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
+                               if msg.is_delivered and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
         
         if not all_msgs_range:
             ax.text(0.5, 0.5, f'No data for {int(comm_range)}m range', 
@@ -1210,7 +1282,7 @@ def plot_delivery_probability_vs_distance_aggregated(all_messages: list[Message]
         all_msgs_range = [msg for msg in all_messages if msg.communication_range == comm_range and msg.distance > 0]
         # Filter all messages that were delivered within the time threshold (not just from delivered_messages)
         delivered_msgs_range = [msg for msg in all_msgs_range 
-                               if msg.is_delivered == 1 and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
+                               if msg.is_delivered and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
         
         if not all_msgs_range:
             continue
@@ -1340,37 +1412,637 @@ def plot_deliverability_vs_communication_range(all_messages: list[Message], deli
                 bbox_inches='tight', dpi=300)
     plt.close()
 
+def get_host_distance_matrix(messages: list[Message]):
+    """
+    Create a distance matrix between hosts using actual host coordinates.
+
+    Args:
+        messages: All messages with host coordinate information
+        
+    Returns:
+        Distance_matrix
+    """
+    
+    # Get all unique hosts
+    hosts: dict[int, HostInfo] = {}
+    for msg in messages:
+        hosts[int(msg.source_host.host_id.split('_')[-1])] = msg.source_host
+        hosts[int(msg.target_host.host_id.split('_')[-1])] = msg.target_host
+
+    # Convert to sorted list for consistent indexing
+    host_list = sorted(list(hosts))
+    
+    # Initialize distance matrix with NaN (no connection/data)
+    n_hosts = len(host_list)
+    distance_matrix = np.full((n_hosts, n_hosts), np.nan)
+    
+    # Calculate distances between all pairs of hosts using coordinates
+    for i, host1_id in enumerate(host_list):
+        host1 = hosts[host1_id]
+        for j, host2_id in enumerate(host_list):
+            host2 = hosts[host2_id]
+            if i != j:
+                distance = host1.distance_to(host2)
+                distance_matrix[i][j] = distance
+            elif i == j:
+                distance_matrix[i][j] = 0.0  # Distance to self is 0
+    
+    return distance_matrix
+
+def get_delivery_success_matrix(all_messages: list[Message], delivered_messages: list[Message], time_threshold: float = 10.0):
+    """
+    Create a delivery success probability matrix between hosts for a specific communication mode.
+    
+    Args:
+        all_messages: All created messages
+        delivered_messages: Successfully delivered messages
+        mode: 0 for intra-cluster, 1 for inter-cluster
+        time_threshold: Time threshold for successful delivery
+        
+    Returns:
+        Tuple of (success_matrix, host_list)
+    """
+    # Filter delivered messages by threshold
+    delivered_messages_in_t = [msg for msg in delivered_messages if msg.delivery_time <= time_threshold]
+
+    # Get all unique hosts
+    hosts: dict[int, HostInfo] = {}
+    for msg in all_messages:
+        hosts[int(msg.source_host.host_id.split('_')[-1])] = msg.source_host
+        hosts[int(msg.target_host.host_id.split('_')[-1])] = msg.target_host
+
+    # Convert to sorted list for consistent indexing
+    host_list = sorted(list(hosts))
+    
+    n_hosts = len(host_list)
+    total_attempts = np.zeros((n_hosts, n_hosts))
+    successful_deliveries = np.zeros((n_hosts, n_hosts))
+    
+    # Count total attempts
+    for msg in all_messages:
+        source = int(msg.source_host.host_id.split('_')[-1])
+        destination = int(msg.target_host.host_id.split('_')[-1])
+        total_attempts[source, destination] += 1
+    
+    # Count successful deliveries
+    for msg in delivered_messages_in_t:
+        source = int(msg.source_host.host_id.split('_')[-1])
+        destination = int(msg.target_host.host_id.split('_')[-1])
+        successful_deliveries[source, destination] += 1
+
+    # Calculate success probability matrix
+    success_matrix = np.divide(successful_deliveries, total_attempts, 
+                              out=np.zeros_like(successful_deliveries), 
+                              where=total_attempts!=0)
+    
+    return success_matrix
+
+# def plot_host_distance_and_delivery_matrices(all_messages: list[Message], delivered_messages: list[Message], 
+#                                             mode: int = 0, time_threshold: float = 10.0):
+#     """
+#     Plot distance and delivery success matrices for a specific communication mode.
+    
+#     Args:
+#         all_messages: All created messages
+#         delivered_messages: Successfully delivered messages
+#         mode: 0 for intra-cluster, 1 for inter-cluster
+#         time_threshold: Time threshold for successful delivery
+#     """
+#     mode_name = "Intra-cluster" if mode == 0 else "Inter-cluster"
+    
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+    
+#     # Distance matrix (absolute values, no binning)
+#     distance_matrix, hosts = get_host_distance_matrix(delivered_messages)
+    
+#     if len(hosts) > 0:
+#         # Use absolute distance values without binning
+#         im1 = ax1.imshow(distance_matrix, cmap='viridis', aspect='auto')
+#         ax1.set_title(f'{mode_name} Host Distance Matrix\n(Absolute Distances)', fontsize=14)
+#         ax1.set_xlabel('Destination Host Index')
+#         ax1.set_ylabel('Source Host Index')
+        
+#         # Create colorbar for distance
+#         cbar1 = plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+#         cbar1.set_label('Distance (meters)')
+        
+#         # Add text annotations for small matrices (if not too many hosts)
+#         if len(hosts) <= 20:
+#             for i in range(len(hosts)):
+#                 for j in range(len(hosts)):
+#                     if not np.isnan(distance_matrix[i, j]):
+#                         text = ax1.text(j, i, f'{distance_matrix[i, j]:.0f}',
+#                                        ha='center', va='center', color='white', fontsize=8)
+        
+#         # Add host labels on axes for small matrices
+#         if len(hosts) <= 20:
+#             ax1.set_xticks(range(len(hosts)))
+#             ax1.set_yticks(range(len(hosts)))
+#             ax1.set_xticklabels([f'H{h}' for h in hosts], rotation=45, ha='right')
+#             ax1.set_yticklabels([f'H{h}' for h in hosts])
+#     else:
+#         ax1.text(0.5, 0.5, f'No {mode_name.lower()} distance data available', 
+#                 ha='center', va='center', transform=ax1.transAxes, fontsize=14)
+#         ax1.set_title(f'{mode_name} Host Distance Matrix')
+    
+#     # Delivery success matrix
+#     success_matrix, success_hosts, success_host_to_index = get_delivery_success_matrix(
+#         all_messages, delivered_messages, mode=mode, time_threshold=time_threshold)
+    
+#     if not len(success_hosts):
+#         raise ValueError("No successful deliveries data found")
+
+#     im2 = ax2.imshow(success_matrix, cmap='RdYlGn', vmin=0, vmax=1, aspect='auto')
+#     ax2.set_title(f'{mode_name} Delivery Success Probability\n(within {time_threshold}s)', fontsize=14)
+#     ax2.set_xlabel('Destination Host Index')
+#     ax2.set_ylabel('Source Host Index')
+    
+#     # Create colorbar for success probability
+#     cbar2 = plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+#     cbar2.set_label('Success Probability')
+    
+#     # Add text annotations for small matrices
+#     if len(success_hosts) <= 20:
+#         for i in range(len(success_hosts)):
+#             for j in range(len(success_hosts)):
+#                 if not np.isnan(success_matrix[i, j]):
+#                     text = ax2.text(j, i, f'{success_matrix[i, j]:.2f}',
+#                                     ha='center', va='center', 
+#                                     color='black' if success_matrix[i, j] > 0.5 else 'white', 
+#                                     fontsize=8)
+    
+#     # Add host labels on axes for small matrices
+#     if len(success_hosts) <= 20:
+#         ax2.set_xticks(range(len(success_hosts)))
+#         ax2.set_yticks(range(len(success_hosts)))
+#         ax2.set_xticklabels([f'H{h}' for h in success_hosts], rotation=45, ha='right')
+#         ax2.set_yticklabels([f'H{h}' for h in success_hosts])
+    
+#     plt.tight_layout()
+#     mode_suffix = "intra" if mode == 0 else "inter"
+#     plt.savefig(f'figures/host_distance_and_delivery_matrices_{mode_suffix}_{int(time_threshold)}s.png', 
+#                 bbox_inches='tight', dpi=300)
+#     plt.close()
+
+# def plot_host_distance_matrices(messages: list[Message]):
+#     """Plot distance matrices as heatmaps for both intra and inter-cluster modes"""
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+    
+#     # Intra-cluster distance matrix
+#     intra_matrix, intra_hosts = get_host_distance_matrix(messages, mode=0)
+    
+#     if len(intra_hosts) > 0:
+#         # Use smaller bins for intra-cluster (shorter distances)
+#         intra_bins = np.arange(0, np.nanmax(intra_matrix) + 10, 5)  # 5m bins
+#         intra_binned = np.digitize(intra_matrix, intra_bins)
+#         intra_binned = np.where(np.isnan(intra_matrix), np.nan, intra_binned)
+        
+#         im1 = ax1.imshow(intra_binned, cmap='viridis', aspect='auto')
+#         ax1.set_title('Intra-cluster Host Distance Matrix\n(5m bins)', fontsize=14)
+#         ax1.set_xlabel('Destination Host Index')
+#         ax1.set_ylabel('Source Host Index')
+        
+#         # Create custom colorbar for intra-cluster
+#         cbar1 = plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+#         cbar1.set_label('Distance Bin (5m increments)')
+        
+#         # Add text annotations for small matrices (if not too many hosts)
+#         if len(intra_hosts) <= 20:
+#             for i in range(len(intra_hosts)):
+#                 for j in range(len(intra_hosts)):
+#                     if not np.isnan(intra_matrix[i, j]):
+#                         text = ax1.text(j, i, f'{intra_matrix[i, j]:.0f}',
+#                                        ha='center', va='center', color='white', fontsize=8)
+#     else:
+#         ax1.text(0.5, 0.5, 'No intra-cluster data available', 
+#                 ha='center', va='center', transform=ax1.transAxes, fontsize=14)
+#         ax1.set_title('Intra-cluster Host Distance Matrix')
+    
+#     # Inter-cluster distance matrix
+#     inter_matrix, inter_hosts, _ = get_host_distance_matrix(messages, mode=1)
+    
+#     if len(inter_hosts) > 0:
+#         # Use larger bins for inter-cluster (longer distances)
+#         inter_bins = np.arange(0, np.nanmax(inter_matrix) + 20, 20)  # 20m bins
+#         inter_binned = np.digitize(inter_matrix, inter_bins)
+#         inter_binned = np.where(np.isnan(inter_matrix), np.nan, inter_binned)
+        
+#         im2 = ax2.imshow(inter_binned, cmap='plasma', aspect='auto')
+#         ax2.set_title('Inter-cluster Host Distance Matrix\n(20m bins)', fontsize=14)
+#         ax2.set_xlabel('Destination Host Index')
+#         ax2.set_ylabel('Source Host Index')
+        
+#         # Create custom colorbar for inter-cluster
+#         cbar2 = plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+#         cbar2.set_label('Distance Bin (20m increments)')
+        
+#         # Add text annotations for small matrices (if not too many hosts)
+#         if len(inter_hosts) <= 20:
+#             for i in range(len(inter_hosts)):
+#                 for j in range(len(inter_hosts)):
+#                     if not np.isnan(inter_matrix[i, j]):
+#                         text = ax2.text(j, i, f'{inter_matrix[i, j]:.0f}',
+#                                        ha='center', va='center', color='white', fontsize=8)
+#     else:
+#         ax2.text(0.5, 0.5, 'No inter-cluster data available', 
+#                 ha='center', va='center', transform=ax2.transAxes, fontsize=14)
+#         ax2.set_title('Inter-cluster Host Distance Matrix')
+    
+#     plt.tight_layout()
+#     plt.savefig('figures/host_distance_matrices.png', bbox_inches='tight', dpi=300)
+#     plt.close()
+
+# def plot_delivery_success_matrices(all_messages: list[Message], delivered_messages: list[Message], 
+#                                   time_threshold: float = 10.0):
+#     """Plot delivery success probability matrices as heatmaps for both intra and inter-cluster modes"""
+#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+    
+#     # Intra-cluster delivery success matrix
+#     intra_matrix, intra_hosts = get_delivery_success_matrix(all_messages, delivered_messages, time_threshold=time_threshold)
+    
+#     if len(intra_hosts) > 0:
+#         im1 = ax1.imshow(intra_matrix, cmap='RdYlGn', vmin=0, vmax=1, aspect='auto')
+#         ax1.set_title(f'Intra-cluster Delivery Success Probability\n(within {time_threshold}s)', fontsize=14)
+#         ax1.set_xlabel('Destination Host Index')
+#         ax1.set_ylabel('Source Host Index')
+        
+#         cbar1 = plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+#         cbar1.set_label('Success Probability')
+        
+#         # Add text annotations for small matrices
+#         if len(intra_hosts) <= 20:
+#             for i in range(len(intra_hosts)):
+#                 for j in range(len(intra_hosts)):
+#                     if not np.isnan(intra_matrix[i, j]):
+#                         text = ax1.text(j, i, f'{intra_matrix[i, j]:.2f}',
+#                                        ha='center', va='center', 
+#                                        color='black' if intra_matrix[i, j] > 0.5 else 'white', 
+#                                        fontsize=8)
+#     else:
+#         ax1.text(0.5, 0.5, 'No intra-cluster data available', 
+#                 ha='center', va='center', transform=ax1.transAxes, fontsize=14)
+#         ax1.set_title(f'Intra-cluster Delivery Success Probability\n(within {time_threshold}s)')
+    
+#     # Inter-cluster delivery success matrix
+#     inter_matrix, inter_hosts = get_delivery_success_matrix(all_messages, delivered_messages, 
+#                                                               mode=1, time_threshold=time_threshold)
+    
+#     if len(inter_hosts) > 0:
+#         im2 = ax2.imshow(inter_matrix, cmap='RdYlGn', vmin=0, vmax=1, aspect='auto')
+#         ax2.set_title(f'Inter-cluster Delivery Success Probability\n(within {time_threshold}s)', fontsize=14)
+#         ax2.set_xlabel('Destination Host Index')
+#         ax2.set_ylabel('Source Host Index')
+        
+#         cbar2 = plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
+#         cbar2.set_label('Success Probability')
+        
+#         # Add text annotations for small matrices
+#         if len(inter_hosts) <= 20:
+#             for i in range(len(inter_hosts)):
+#                 for j in range(len(inter_hosts)):
+#                     if not np.isnan(inter_matrix[i, j]):
+#                         text = ax2.text(j, i, f'{inter_matrix[i, j]:.2f}',
+#                                        ha='center', va='center', 
+#                                        color='black' if inter_matrix[i, j] > 0.5 else 'white', 
+#                                        fontsize=8)
+#     else:
+#         ax2.text(0.5, 0.5, 'No inter-cluster data available', 
+#                 ha='center', va='center', transform=ax2.transAxes, fontsize=14)
+#         ax2.set_title(f'Inter-cluster Delivery Success Probability\n(within {time_threshold}s)')
+    
+#     plt.tight_layout()
+#     plt.savefig(f'figures/delivery_success_matrices_{int(time_threshold)}s.png', 
+#                 bbox_inches='tight', dpi=300)
+#     plt.close()
+
+def plot_deliverability_vs_communication_range(all_messages: list[Message], delivered_messages: list[Message]):
+    """Plot deliverability percentage vs communication range"""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    all_ranges = sorted(set(msg.communication_range for msg in all_messages), key=int)
+    delivered_ranges = sorted(set(msg.communication_range for msg in delivered_messages), key=int)
+    
+    total_counts = {}
+    delivered_counts = {}
+    
+    for comm_range in all_ranges:
+        total_counts[comm_range] = len([msg for msg in all_messages if msg.communication_range == comm_range])
+        delivered_counts[comm_range] = len([msg for msg in delivered_messages if msg.communication_range == comm_range])
+    
+    ranges = []
+    percentages = []
+    raw_counts = []
+    
+    for comm_range in all_ranges:
+        total = total_counts.get(comm_range, 0)
+        delivered = delivered_counts.get(comm_range, 0)
+        
+        if total > 0:
+            percentage = (delivered / total) * 100
+            ranges.append(comm_range)
+            percentages.append(percentage)
+            raw_counts.append((delivered, total))
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    bars = ax.bar(range(len(ranges)), percentages, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
+    
+    # Add percentage labels on top of bars
+    for i, (bar, percentage, (delivered, total)) in enumerate(zip(bars, percentages, raw_counts)):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                f'{percentage:.1f}%',
+                ha='center', va='bottom',
+                fontsize=10)
+        
+        # Add count labels inside bars
+        ax.text(bar.get_x() + bar.get_width()/2., height/2,
+                f'{delivered:,}',
+                ha='center', va='center',
+                fontsize=8,
+                color='black')
+    
+    ax.set_xlabel('Communication Range (m)', fontsize=12)
+    ax.set_ylabel('Deliverability (%)', fontsize=12)
+    ax.set_title('Message Deliverability vs Communication Range', fontsize=14)
+    ax.set_xticks(range(len(ranges)))
+    ax.set_xticklabels([f'{int(r)}m' for r in ranges])
+    ax.set_ylim(0, 105)  # Set y-axis from 0 to 105%
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    plt.savefig('figures/deliverability_vs_communication_range.png',
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
+def load_messages_per_run(all_messages: list[Message], delivered_messages: list[Message], run: int, range_suffix: int, mode: int):
+    """
+    Filter messages for a specific config.
+    
+    Args:
+        all_messages: List of all messages
+        delivered_messages: List of delivered messages
+        run: Run number
+        range_suffix: Communication range
+        mode: Mode (0 for intra, 1 for inter)
+        
+    Returns:
+        Tuple of (all_messages, delivered_messages) for this specific run
+    """
+
+    all_messages_per_config = [msg for msg in all_messages if msg.run == run and msg.communication_range == range_suffix and msg.mode == mode]
+    delivered_messages_per_config = [msg for msg in delivered_messages if msg.run == run and msg.communication_range == range_suffix and msg.mode == mode]
+
+    return all_messages_per_config, delivered_messages_per_config
+
+def generate_matrices_per_run_and_mode(all_messages: list[Message], delivered_messages: list[Message], range: Optional[int] = None, time_threshold: float = 10.0):
+    """
+    Generate distance and delivery success matrix plots for each individual run and mode.
+    
+    Args:
+        scenario_prefix: Scenario name prefix
+        ranges: List of communication ranges
+        runs: Number of runs
+        message_size: Message size
+        time_threshold: Time threshold for delivery success
+    """
+    
+    # Create directory for plots
+    plots_dir = "figures/matrix_plots_per_run"
+    os.makedirs(plots_dir, exist_ok=True)
+    ranges = set([msg.communication_range for msg in all_messages])
+    runs = set([msg.run for msg in all_messages])
+
+    delivered_messages_per_config = []
+    for range_suffix in ranges:
+        
+        for run in runs:
+            
+            for mode in [0, 1]:
+                mode_name = "intra" if mode == 0 else "inter"
+                
+                # Load data for this specific run and mode
+                all_messages_per_config, delivered_messages_per_config = load_messages_per_run(all_messages, delivered_messages, run, range_suffix, mode)
+
+                if not all_messages_per_config:
+                    print(f"    No messages found for {mode_name} mode, run {run}, range {range_suffix}m")
+                    continue
+                
+                distance_matrix = get_host_distance_matrix(all_messages_per_config)
+                success_matrix = get_delivery_success_matrix(all_messages_per_config, delivered_messages_per_config, time_threshold)
+
+                # Create dual-matrix plot
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+                
+                # Plot distance matrix
+                im1 = ax1.imshow(distance_matrix, cmap='viridis', interpolation='nearest', origin='lower')
+                ax1.set_title(f'Distance Matrix\n - Run {run} - Range {range_suffix}m - {mode_name.title()}')
+                ax1.set_xlabel('Host Index')
+                ax1.set_ylabel('Host Index')
+                plt.colorbar(im1, ax=ax1, label='Distance (m)')
+                
+                # Plot delivery success matrix
+                im2 = ax2.imshow(success_matrix, cmap='RdYlGn', interpolation='nearest', vmin=0, vmax=1, origin='lower')
+                ax2.set_title(f'Delivery Probability Matrix within {time_threshold}s\n - Run {run} - Range {range_suffix}m - {mode_name.title()}')
+                ax2.set_xlabel('Host Index')
+                ax2.set_ylabel('Host Index')
+                plt.colorbar(im2, ax=ax2, label='Delivery Probability')
+                
+                plt.tight_layout()
+
+                plot_filename = f"{plots_dir}/range{range_suffix}_threshold{time_threshold}_run{run}_mode{mode}_matrices.png"
+                plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+                plt.close()
+                
+                print(f"    Saved matrix plot for {mode_name} mode: {distance_matrix.shape[0]} hosts")
+                    
+
+def plot_matrices_per_run_summary(scenario_prefix: str, ranges: list[int], runs: int, 
+                                  message_size: int = 247, time_threshold: float = 10.0):
+    """
+    Generate summary plots of matrices across runs.
+    
+    Args:
+        scenario_prefix: Scenario name prefix  
+        ranges: List of communication ranges
+        runs: Number of runs
+        message_size: Message size
+        time_threshold: Time threshold for delivery success
+    """
+    import os
+    
+    matrices_dir = "matrices_per_run"
+    
+    for range_suffix in ranges:
+        for mode in [0, 1]:
+            mode_name = "intra" if mode == 0 else "inter"
+            
+            # Collect matrices for this range and mode
+            distance_matrices = []
+            success_matrices = []
+            
+            for run in range(1, runs + 1):
+                run_prefix = f"{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}"
+                
+                distance_file = f"{matrices_dir}/{run_prefix}_distance_matrix.npy"
+                success_file = f"{matrices_dir}/{run_prefix}_success_matrix.npy"
+                
+                if os.path.exists(distance_file) and os.path.exists(success_file):
+                    distance_matrices.append(np.load(distance_file))
+                    success_matrices.append(np.load(success_file))
+            
+            if distance_matrices:
+                # Calculate mean and std across runs
+                mean_distance = np.nanmean(np.stack(distance_matrices), axis=0)
+                std_distance = np.nanstd(np.stack(distance_matrices), axis=0)
+                
+                mean_success = np.nanmean(np.stack(success_matrices), axis=0)
+                std_success = np.nanstd(np.stack(success_matrices), axis=0)
+                
+                # Create summary plots
+                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+                
+                # Distance matrix mean
+                im1 = ax1.imshow(mean_distance, cmap='viridis', aspect='auto', origin='lower')
+                ax1.set_title(f'Mean Distance Matrix - {mode_name.title()} Mode\nRange: {range_suffix}m, Runs: {len(distance_matrices)}')
+                plt.colorbar(im1, ax=ax1, label='Distance (m)')
+                
+                # Distance matrix std
+                im2 = ax2.imshow(std_distance, cmap='plasma', aspect='auto', origin='lower')
+                ax2.set_title(f'Distance Matrix Std Dev - {mode_name.title()} Mode\nRange: {range_suffix}m, Runs: {len(distance_matrices)}')
+                plt.colorbar(im2, ax=ax2, label='Std Dev (m)')
+                
+                # Success matrix mean
+                im3 = ax3.imshow(mean_success, cmap='RdYlGn', vmin=0, vmax=1, aspect='auto', origin='lower')
+                ax3.set_title(f'Mean Success Matrix - {mode_name.title()} Mode\nRange: {range_suffix}m, Time: {time_threshold}s')
+                plt.colorbar(im3, ax=ax3, label='Success Probability')
+                
+                # Success matrix std
+                im4 = ax4.imshow(std_success, cmap='Blues', vmin=0, aspect='auto', origin='lower')
+                ax4.set_title(f'Success Matrix Std Dev - {mode_name.title()} Mode\nRange: {range_suffix}m, Time: {time_threshold}s')
+                plt.colorbar(im4, ax=ax4, label='Std Dev')
+                
+                plt.tight_layout()
+                plt.savefig(f'figures/matrices_summary_range{range_suffix}_mode{mode}_threshold{int(time_threshold)}s.png', 
+                           bbox_inches='tight', dpi=300)
+                plt.close()
+                
+                print(f"Generated summary plot for range {range_suffix}, {mode_name} mode ({len(distance_matrices)} runs)")
+
+def detect_simulation_parameters(messages: list[Message]) -> dict:
+    """
+    Automatically detect simulation parameters from message data.
+    
+    Args:
+        messages: List of messages loaded from pickle files
+        
+    Returns:
+        Dictionary containing detected parameters
+    """
+    if not messages:
+        raise ValueError("No messages found in pickle files")
+    
+    # Extract unique values for each parameter
+    ranges = sorted(set(msg.communication_range for msg in messages if msg.communication_range > 0))
+    runs = sorted(set(msg.run for msg in messages if msg.run > 0))
+    scenario_names = set(msg.scenario_name for msg in messages if msg.scenario_name)
+    message_sizes = set(msg.message_size for msg in messages if msg.message_size > 0)
+    
+    # Get the most common values
+    scenario_name = list(scenario_names)[0] if scenario_names else "Unknown"
+    message_size = list(message_sizes)[0] if message_sizes else 0
+    
+    params = {
+        'ranges': ranges,
+        'runs': runs,
+        'num_runs': len(runs),
+        'scenario_name': scenario_name,
+        'message_size': message_size,
+        'total_messages': len(messages)
+    }
+    
+    return params
+
 def main():
-    with open("delivered_messages.pkl", 'rb') as f:
-        messages: list[Message] = pickle.load(f)
+    # Load message data from pickle files
+    print("Loading message data from pickle files...")
     
-    with open("all_messages.pkl", 'rb') as f:
-        all_messages: list[Message] = pickle.load(f)
+    try:
+        with open("delivered_messages.pkl", 'rb') as f:
+            messages: list[Message] = pickle.load(f)
+        
+        with open("all_messages.pkl", 'rb') as f:
+            all_messages: list[Message] = pickle.load(f)
+    except FileNotFoundError as e:
+        print(f"Error: Could not find pickle files. Please run load_data.py first to generate them.")
+        print(f"Missing file: {e.filename}")
+        return
+    
+    # Automatically detect simulation parameters
+    print("Detecting simulation parameters from message data...")
+    try:
+        params = detect_simulation_parameters(all_messages)
+        print(f"Detected parameters:")
+        print(f"  - Scenario: {params['scenario_name']}")
+        print(f"  - Message size: {params['message_size']} bytes")
+        print(f"  - Communication ranges: {params['ranges']}")
+        print(f"  - Runs: {len(params['runs'])} runs (run {min(params['runs'])} to {max(params['runs'])})")
+        print(f"  - Total messages: {params['total_messages']:,}")
+        print(f"  - Delivered messages: {len(messages):,}")
+    except Exception as e:
+        print(f"Error detecting parameters: {e}")
+        return
 
-    unique_ranges = sorted(set(msg.communication_range for msg in messages))
-    print(f"Unique ranges: {unique_ranges}")
+    # Generate standard plots
+    # print("\nGenerating standard analysis plots...")
+    
+    # df = create_dataframe(messages)
+    
+    # plot_deliverability_vs_communication_range(all_messages, messages)
+    # plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=10.0)  # Individual subplots
+    # plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=10.0)  # Aggregated plot
+    # plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=60.0)  # Individual subplots
+    # plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=60.0)  # Aggregated plot
+    # plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=120.0)  # Also generate for 2 minutes
+    # plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=120.0)  # Aggregated for 2 minutes
+    # plot_hop_counts(df)
+    # plot_distance_vs_hopcount_by_range(df)
+    # plot_latency_frequency_by_range(messages)
+    # plot_bitrate_vs_distance(messages)
+    # plot_correlation_heatmap(messages)
+    # plot_message_frequency_by_distance(messages)
+    # plot_node_degree_vs_communication_radius(messages)
+    # plot_node_degree_vs_hop_count(messages)
+    # plot_hop_latency_vs_communication_radius(messages)
+    # plot_hop_latency_vs_node_degree(messages)
+    
+    # # Generate matrix plots using host coordinates
+    # print("\nGenerating host distance matrices...")
+    # plot_host_distance_matrices(messages)
+    
+    # print("Generating delivery success matrices...")
+    # plot_delivery_success_matrices(all_messages, messages, time_threshold=10.0)
+    # plot_delivery_success_matrices(all_messages, messages, time_threshold=60.0)  # Also for 60 seconds
+    
+    # Combined distance and delivery success matrices
+    # print("Generating combined distance and delivery matrices...")
+    # plot_host_distance_and_delivery_matrices(all_messages, messages, mode=0, time_threshold=10.0)  # Intra-cluster
+    # plot_host_distance_and_delivery_matrices(all_messages, messages, mode=1, time_threshold=10.0)  # Inter-cluster
+    # plot_host_distance_and_delivery_matrices(all_messages, messages, mode=0, time_threshold=60.0)  # Intra-cluster, 60s
+    # plot_host_distance_and_delivery_matrices(all_messages, messages, mode=1, time_threshold=60.0)  # Inter-cluster, 60s
+    
+    # Generate per-run matrices
+    print("\nGenerating per-run matrices...")
+    generate_matrices_per_run_and_mode(all_messages, messages, range=120, time_threshold=10.0)
+    generate_matrices_per_run_and_mode(all_messages, messages, range=120, time_threshold=60.0)
+    generate_matrices_per_run_and_mode(all_messages, messages, range=120, time_threshold=120.0)
+    generate_matrices_per_run_and_mode(all_messages, messages, range=120, time_threshold=240.0)
 
-    df = create_dataframe(messages)
-    
-    plot_deliverability_vs_communication_range(all_messages, messages)
-    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=10.0)  # Individual subplots
-    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=10.0)  # Aggregated plot
-    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=60.0)  # Individual subplots
-    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=60.0)  # Aggregated plot
-    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=120.0)  # Also generate for 2 minutes
-    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=120.0)  # Aggregated for 2 minutes
-    plot_hop_counts(df)
-    plot_distance_vs_hopcount_by_range(df)
-    plot_latency_frequency_by_range(messages)
-    plot_bitrate_vs_distance(messages)
-    plot_correlation_heatmap(messages)
-    plot_message_frequency_by_distance(messages)
-    plot_node_degree_vs_communication_radius(messages)
-    plot_node_degree_vs_hop_count(messages)
-    plot_hop_latency_vs_communication_radius(messages)
-    plot_hop_latency_vs_node_degree(messages)
-    
-    print("All plots generated successfully!")
+    plot_max_degree_vs_throughput(messages)
+
+    # print("Generating per-run matrix summary plots...")
+    # plot_matrices_per_run_summary(all_messages, messages, time_threshold=10.0)
+
+    print("\nAll plots generated successfully!")
 
 if __name__ == "__main__":
     main()

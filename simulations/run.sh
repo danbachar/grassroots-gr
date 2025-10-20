@@ -181,9 +181,10 @@ prepare_config_files() {
 run_simulations() {
     local NUMBER_OF_SIZES=${#SIZES[@]}
     local NUMBER_OF_RANGES=${#RANGES[@]}
-    local NUMBER_OF_MODES=$((MODE+1)) # mode is 0 or 1, so add 1 to get count
+    # local NUMBER_OF_MODES=$((MODE+1)) # mode is 0 or 1, so add 1 to get count
     local NUMBER_OF_MAX_DEGREES=${#MAX_NODE_DEGREES[@]}
-    local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS * NUMBER_OF_MODES * NUMBER_OF_MAX_DEGREES))
+    # local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS * NUMBER_OF_MODES * NUMBER_OF_MAX_DEGREES))
+    local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS * NUMBER_OF_MAX_DEGREES))
 
     echo "Starting parallel simulations with up to $MAX_PARALLEL_JOBS concurrent jobs..."
     echo "Total simulations to run: $TOTAL_SIMULATIONS"
@@ -194,22 +195,22 @@ run_simulations() {
 
     total_jobs=0
     for max_degree in "${MAX_NODE_DEGREES[@]}"; do
-        for mode in $(seq 0 $MODE); do
+        # for mode in $(seq 0 $MODE); do
             for size in "${SIZES[@]}"; do
                 for range in "${RANGES[@]}"; do
-                    echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $mode, max node degree: $max_degree"
+                    echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $MODE, max node degree: $max_degree"
                     for run in $(seq $START_RUN $NUM_RUNS); do
                         wait_for_jobs $MAX_PARALLEL_JOBS
-                        run_simulation $size $run $range $mode $max_degree &
+                        run_simulation $size $run $range $MODE $max_degree &
 
                         total_jobs=$((total_jobs + 1))
-                        echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range, mode=$mode, max_node_degree=$max_degree"
+                        echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range, mode=$MODE, max_node_degree=$max_degree"
 
                     sleep 0.1
                     done
                 done
             done
-        done
+        # done
     done
 
     echo "Waiting for all simulations to complete..."

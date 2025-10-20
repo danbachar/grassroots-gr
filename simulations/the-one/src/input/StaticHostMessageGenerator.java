@@ -1,8 +1,8 @@
 package input;
 
 import core.*;
+import interfaces.BluetoothInterface;
 import java.util.*;
-import movement.RandomStationaryCluster;
 public class StaticHostMessageGenerator
     extends SingleMessageGenerator {
   /**
@@ -44,6 +44,11 @@ public class StaticHostMessageGenerator
     public int decrementCount() {
       return --this.count;
     }
+
+    public void purgeMessageBuffers() {
+      fromHost.purgeMessageBuffer();
+      toHost.purgeMessageBuffer();
+    }
   }
 
   static {
@@ -72,9 +77,10 @@ public class StaticHostMessageGenerator
         for (DTNHost toHost : hosts) {
           if (fromHost != toHost) {
             // Check if this pair is valid for the current mode
-            boolean isValidPair = (this.mode == Mode.INTER_CLUSTER) || 
-                                 (((RandomStationaryCluster) fromHost.getMovementModel()).isInSameCluster(toHost));
-            
+            BluetoothInterface fromInterface = (BluetoothInterface) fromHost.getInterface(1);
+            BluetoothInterface toInterface = (BluetoothInterface) toHost.getInterface(1);
+
+            boolean isValidPair = fromInterface.canConnect(toInterface);
             if (isValidPair) {
               pairs.add(new HostPair(fromHost, toHost, this.countPerPair));
             }
@@ -108,6 +114,7 @@ public class StaticHostMessageGenerator
     int interval = drawNextEventTimeDiff();
     int newCount = pair.decrementCount();
     if (newCount <= 0) {
+      pair.purgeMessageBuffers();
       pairs.remove(pair);
     }
 
@@ -121,5 +128,5 @@ public class StaticHostMessageGenerator
     }
 
     return mce;
-}
+  }
 }

@@ -548,4 +548,8 @@ public class DTNHost implements Comparable<DTNHost> {
 		return this.movement;
 	}
 
+	public void purgeMessageBuffer() {
+		this.router.purge();
+	}
+
 }

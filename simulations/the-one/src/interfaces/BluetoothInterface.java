@@ -54,15 +54,9 @@ public class BluetoothInterface extends NetworkInterface {
      *
      * @param anotherInterface The interface to connect to
      */
+    @Override
     public void connect(NetworkInterface anotherInterface) {
-        if (this != anotherInterface
-            && isScanning()
-            && anotherInterface.getHost().isRadioActive()
-            && isWithinRange(anotherInterface)
-            && canCommunicateWith(anotherInterface)
-            && !isConnected(anotherInterface)
-            && hasConnectionCapacity(this)
-            && hasConnectionCapacity(anotherInterface)) {
+        if (canConnect(anotherInterface)) {
             // perform costly line of sight check only if all the other conditions hold
             boolean hasClearLineOfSight = hasFreeLineOfSight(this.getHost(), anotherInterface.getHost());
 
@@ -72,6 +66,18 @@ public class BluetoothInterface extends NetworkInterface {
                 connect(con, anotherInterface);
             }
         }
+    }
+
+    @Override
+    public boolean canConnect(NetworkInterface anotherInterface) {
+        return this != anotherInterface
+            && isScanning()
+            && anotherInterface.getHost().isRadioActive()
+            && isWithinRange(anotherInterface)
+            && canCommunicateWith(anotherInterface)
+            && !isConnected(anotherInterface)
+            && hasConnectionCapacity(this)
+            && hasConnectionCapacity(anotherInterface);
     }
 
     private boolean hasConnectionCapacity(NetworkInterface ni) {
