@@ -137,7 +137,7 @@ public class MessageEventGenerator implements EventQueue {
 	 * @param hostRange The range of hosts
 	 * @return A random host address
 	 */
-	protected int drawHostAddress(int hostRange[]) {
+	protected int drawHostAddress(int[] hostRange) {
 		if (hostRange[1] == hostRange[0]) {
 			return hostRange[0];
 		}
@@ -171,7 +171,7 @@ public class MessageEventGenerator implements EventQueue {
 	 * @param from the "from" address
 	 * @return a destination address from the range, but different from "from"
 	 */
-	protected int drawToAddress(int hostRange[], int from) {
+	protected int drawToAddress(int[] hostRange, int from) {
 		int to;
 		do {
 			to = this.toHostRange != null ? drawHostAddress(this.toHostRange):

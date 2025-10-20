@@ -7,15 +7,20 @@ import java.util.Collection;
 import movement.RandomStationaryCluster;
 import util.Room;
 
-// loosely based on bluetooth 5.0, but only in direct line of sight
-//  Optionally supports a churn rate p: for every timeslot, there is a p chance this connection will break (and never come back)
+// loosely based on bluetooth, but only in direct line of sight
 public class BluetoothInterface extends NetworkInterface {
     /**
      * Maximum number of parallel connections allowed -setting id ({@value} ).
      */
     public static final String COMMUNICATION_MODE_S = "communicationMode";
 
+    /**
+     * Maximum links this interface can have -setting id {@value}.
+     */
+    public static final String MAX_NODE_DEGREE_S = "maxDegree";
+
     protected final StaticHostMessageGenerator.Mode mode;
+    protected final int maxDegree;
 
     /**
      * Reads the interface settings from the Settings file
@@ -23,6 +28,7 @@ public class BluetoothInterface extends NetworkInterface {
     public BluetoothInterface(Settings s) {
         super(s);
         this.mode = Mode.getByValue(s.getInt(COMMUNICATION_MODE_S));
+        this.maxDegree = s.getInt(MAX_NODE_DEGREE_S);
     }
 
     /**
@@ -33,6 +39,7 @@ public class BluetoothInterface extends NetworkInterface {
     public BluetoothInterface(BluetoothInterface ni) {
         super(ni);
         this.mode = ni.mode;
+        this.maxDegree = ni.maxDegree;
     }
 
     public NetworkInterface replicate() {
@@ -41,19 +48,21 @@ public class BluetoothInterface extends NetworkInterface {
 
     /**
      * Tries to connect this host to another host. The other host must be
-     * active, within range of this host, and have a clear line of sight of it for
-     * the connection to succeed.
+     * active, within range of this host, have a clear line of sight of it,
+     * and have connection capacity, for the connection to succeed.
      * For simplification, assume both hosts' have only bluetooth network interfaces
      *
      * @param anotherInterface The interface to connect to
      */
     public void connect(NetworkInterface anotherInterface) {
-        if (isScanning()
-                && anotherInterface.getHost().isRadioActive()
-                && isWithinRange(anotherInterface)
-                && canCommunicateWith(anotherInterface)
-                && !isConnected(anotherInterface)
-                && (this != anotherInterface)) {
+        if (this != anotherInterface
+            && isScanning()
+            && anotherInterface.getHost().isRadioActive()
+            && isWithinRange(anotherInterface)
+            && canCommunicateWith(anotherInterface)
+            && !isConnected(anotherInterface)
+            && hasConnectionCapacity(this)
+            && hasConnectionCapacity(anotherInterface)) {
             // perform costly line of sight check only if all the other conditions hold
             boolean hasClearLineOfSight = hasFreeLineOfSight(this.getHost(), anotherInterface.getHost());
 
@@ -63,6 +72,13 @@ public class BluetoothInterface extends NetworkInterface {
                 connect(con, anotherInterface);
             }
         }
+    }
+
+    private boolean hasConnectionCapacity(NetworkInterface ni) {
+        // assume interface is BluetoothInterface
+        BluetoothInterface btInterface = (BluetoothInterface)ni;
+
+        return ni.getConnections().size() < btInterface.maxDegree;
     }
 
     private boolean canCommunicateWith(NetworkInterface anotherInterface) {

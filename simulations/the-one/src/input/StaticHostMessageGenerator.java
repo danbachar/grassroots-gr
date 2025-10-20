@@ -5,8 +5,16 @@ import java.util.*;
 import movement.RandomStationaryCluster;
 public class StaticHostMessageGenerator
     extends SingleMessageGenerator {
+  /**
+  * Number of messages sent between every host pair -setting id ({@value} ).
+  */
   public static final String COUNT_PER_PAIR_S = "count";
+
+  /**
+  * Number of messages sent between every host pair -setting id ({@value} ).
+  */
   public static final String MODE_S = "mode";
+
   private final int countPerPair;
   private final Mode mode;
 

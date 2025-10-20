@@ -1,3 +1,4 @@
 # 0 for intra-cluster communication, 1 for inter-cluster communication
-Events1.mode = 0
-bluetoothInterface.communicationMode = 0
+Events1.mode = 1
+bluetoothInterface.communicationMode = 1
+bluetoothInterface.maxDegree = 1
