@@ -74,24 +74,29 @@ public class StaticHostMessageGenerator
       
       // Create COUNT messages for each valid host pair
       for (DTNHost fromHost : hosts) {
+        BluetoothInterface fromInterface = (BluetoothInterface) fromHost.getInterface(1);
+        int nodeDegree = fromInterface.getMaxDegree();
+
         for (DTNHost toHost : hosts) {
+          if (nodeDegree == 0) {
+            // not really accurate because this should be bidirectional but still better
+            continue;
+          }
           if (fromHost != toHost) {
             // Check if this pair is valid for the current mode
-            BluetoothInterface fromInterface = (BluetoothInterface) fromHost.getInterface(1);
             BluetoothInterface toInterface = (BluetoothInterface) toHost.getInterface(1);
 
             boolean isValidPair = fromInterface.canConnect(toInterface);
             if (isValidPair) {
+              nodeDegree--;
               pairs.add(new HostPair(fromHost, toHost, this.countPerPair));
             }
           }
         }
       }
       
-      System.out.println("Generated " + pairs.size() + " messages for " + 
-                        (this.mode == Mode.INTER_CLUSTER ? "INTER" : "INTRA") + 
-                        " cluster mode with " + this.countPerPair + " messages per host pair");
-      
+      System.out.println("Generated " + pairs.size()*this.countPerPair + (this.mode == Mode.INTER_CLUSTER ? " inter" : "intra ") + "cluster messages for " + pairs.size() + " pairs");
+
       this.firstRun = false;
     }
 

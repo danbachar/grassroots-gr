@@ -177,6 +177,10 @@ public class BluetoothInterface extends NetworkInterface {
         return (int) Math.floor(BluetoothLEBitrateCalculator.getBitrateBps(distance));
     }
 
+    public int getMaxDegree() {
+        return this.maxDegree;
+    }
+
     /**
      * Returns a string representation of the object.
      * 
