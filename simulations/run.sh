@@ -138,7 +138,7 @@ run_simulation() {
     cd -
     end_timestamp=$(date +%s)
     duration=$((end_timestamp-start_timestamp))
-    
+
     echo "[$(date '+%H:%M:%S')] Completed simulation ${job_id} in ${duration} seconds"
 }
 
@@ -155,8 +155,8 @@ prepare_config_files() {
     # 0 for intra-cluster communication, 1 for inter-cluster communication
     for mode in 0 1; do
         for max_node_degree in "${MAX_NODE_DEGREES[@]}"; do
-        sed -e "s/Events1.mode = .*/Events1.mode = $mode/" \
-            -e "s/bluetoothInterface.communicationMode = .*/bluetoothInterface.communicationMode = $mode/" \
+            sed -e "s/Events1.mode = .*/Events1.mode = $mode/" \
+                -e "s/bluetoothInterface.communicationMode = .*/bluetoothInterface.communicationMode = $mode/" \
                 -e "s/bluetoothInterface.maxDegree = .*/bluetoothInterface.maxDegree = $max_node_degree/" \
                 the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-mode${mode}-maxdeg${max_node_degree}.txt"
         done
@@ -195,15 +195,15 @@ run_simulations() {
 
     total_jobs=0
     for max_degree in "${MAX_NODE_DEGREES[@]}"; do
-    for mode in $(seq 0 $MODE); do
-        for size in "${SIZES[@]}"; do
-            for range in "${RANGES[@]}"; do
+        for mode in $(seq 0 $MODE); do
+            for size in "${SIZES[@]}"; do
+                for range in "${RANGES[@]}"; do
                     echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $mode, max node degree: $max_degree"
-                for run in $(seq $START_RUN $NUM_RUNS); do
-                    wait_for_jobs $MAX_PARALLEL_JOBS
+                    for run in $(seq $START_RUN $NUM_RUNS); do
+                        wait_for_jobs $MAX_PARALLEL_JOBS
                         run_simulation $size $run $range $mode $max_degree &
 
-                    total_jobs=$((total_jobs + 1))
+                        total_jobs=$((total_jobs + 1))
                         echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range, mode=$mode, max_node_degree=$max_degree"
 
                     sleep 0.1
