@@ -14,7 +14,7 @@ DEFAULT_MODE=1
 print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  -m, --mode MODE        Cluster communicatoin mode: 0 to allow only intra-cluster communication, 1 to also allow inter-cluster communication (default: $DEFAULT_MODE)"
+    echo "  -m, --mode MODE        Cluster communication mode: 0 to allow only intra-cluster communication, 1 to also allow inter-cluster communication (default: $DEFAULT_MODE)"
     echo "  -j, --jobs NUM         Maximum number of parallel jobs (default: $DEFAULT_MAX_PARALLEL_JOBS)"
     echo "  -n, --num NUM          Number of runs per size (default: $DEFAULT_NUM_RUNS)"
     echo "  -start NUM             Run number to start from (default: $DEFAULT_START)"
