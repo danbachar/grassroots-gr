@@ -168,7 +168,6 @@ prepare_config_files() {
                         -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
                         -e "s/Events1.size = .*/Events1.size = $size/" \
                         -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
-                        -e "s/Events1.binSize = .*/Events1.binSize = $((mode == 0 ? INTRA_CLUSTER_BIN_SIZE : INTER_CLUSTER_BIN_SIZE))/" \
                         the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt"
                 done
             done
