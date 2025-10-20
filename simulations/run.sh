@@ -133,7 +133,7 @@ run_simulation() {
 
     cd the-one
     ./one.sh -b 1  \
-        "$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt" \
+        "$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}.txt" \
         "$SCENARIO_NAME-comms-settings-mode${mode}-maxdeg${max_node_degree}.txt"
     cd -
     end_timestamp=$(date +%s)
@@ -159,16 +159,16 @@ prepare_config_files() {
                 -e "s/bluetoothInterface.communicationMode = .*/bluetoothInterface.communicationMode = $mode/" \
                 -e "s/bluetoothInterface.maxDegree = .*/bluetoothInterface.maxDegree = $max_node_degree/" \
                 the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-mode${mode}-maxdeg${max_node_degree}.txt"
-        done
-        for size in "${SIZES[@]}"; do
-            for run in $(seq $START_RUN $NUM_RUNS); do
-                for range in "${RANGES[@]}"; do
-                    RANDOM_SEED=$((size+range*1000))
-                    sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_size${size}_run${run}_range${range}_mode${mode}/" \
-                        -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
-                        -e "s/Events1.size = .*/Events1.size = $size/" \
-                        -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
-                        the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt"
+            for size in "${SIZES[@]}"; do
+                for run in $(seq $START_RUN $NUM_RUNS); do
+                    for range in "${RANGES[@]}"; do
+                        RANDOM_SEED=$((size+range*1000))
+                        sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_size${size}_run${run}_range${range}_mode${mode}_maxdeg${max_node_degree}/" \
+                            -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
+                            -e "s/Events1.size = .*/Events1.size = $size/" \
+                            -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
+                            the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}.txt"
+                    done
                 done
             done
         done
