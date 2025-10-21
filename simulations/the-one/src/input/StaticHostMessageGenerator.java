@@ -69,15 +69,20 @@ public class StaticHostMessageGenerator
   @Override
   public ExternalEvent nextEvent() {
     if (this.firstRun) {
-      var hosts = SimScenario.getInstance().getHosts();
+      var hosts1 = new ArrayList<>(SimScenario.getInstance().getHosts());
+      Collections.shuffle(hosts1);
+
+      var hosts2 = new ArrayList<>(SimScenario.getInstance().getHosts());
+      Collections.shuffle(hosts2);
+      
       pairs = new ArrayList<>();
       
       // Create COUNT messages for each valid host pair
-      for (DTNHost fromHost : hosts) {
+      for (DTNHost fromHost : hosts1) {
         BluetoothInterface fromInterface = (BluetoothInterface) fromHost.getInterface(1);
         int nodeDegree = fromInterface.getMaxDegree();
 
-        for (DTNHost toHost : hosts) {
+        for (DTNHost toHost : hosts2) {
           if (nodeDegree == 0) {
             // not really accurate because this should be bidirectional but still better
             continue;
@@ -95,7 +100,7 @@ public class StaticHostMessageGenerator
         }
       }
       
-      System.out.println("Generated " + pairs.size()*this.countPerPair + (this.mode == Mode.INTER_CLUSTER ? " inter" : "intra ") + "cluster messages for " + pairs.size() + " pairs");
+      System.out.println("Generated " + pairs.size()*this.countPerPair + (this.mode == Mode.INTER_CLUSTER ? " inter" : " intra ") + "cluster messages for " + pairs.size() + " pairs");
 
       this.firstRun = false;
     }
