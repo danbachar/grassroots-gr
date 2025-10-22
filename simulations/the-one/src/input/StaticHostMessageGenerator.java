@@ -20,6 +20,7 @@ public class StaticHostMessageGenerator
 
   private boolean firstRun = true;
   private static List<HostPair> pairs = null;
+  private static Iterator<HostPair> pairIterator = null;
 
   public enum Mode {
     INTRA_CLUSTER,
@@ -58,6 +59,7 @@ public class StaticHostMessageGenerator
 
   public static void reset() {
     pairs = null;
+    pairIterator = null;
   }
 
   public StaticHostMessageGenerator(Settings s) {
@@ -103,29 +105,34 @@ public class StaticHostMessageGenerator
       System.out.println("Generated " + pairs.size()*this.countPerPair + (this.mode == Mode.INTER_CLUSTER ? " inter" : " intra ") + "cluster messages for " + pairs.size() + " pairs");
 
       this.firstRun = false;
+      pairIterator = pairs.iterator();
     }
 
-    // Check if we have any messages left to send
-    var selectedPair = pairs.stream()
-        .filter(pair -> pair.count > 0)
-        .findAny();
+    // Find next pair with remaining messages
+    HostPair pair = null;
+    while (pairIterator.hasNext()) {
+      HostPair candidate = pairIterator.next();
+      if (candidate.count > 0) {
+        pair = candidate;
+        break;
+      }
+    }
 
-    if (selectedPair.isEmpty()) {
+    if (pair == null) {
       SimScenario.getInstance().getWorld().cancelSim();
       this.nextEventsTime = Double.MAX_VALUE;
       return new ExternalEvent(this.nextEventsTime);
     }
-
-    var pair = selectedPair.get();
 
     int from = pair.fromHost.getAddress();
     int to = pair.toHost.getAddress();
     int msgSize = drawMessageSize();
     int interval = drawNextEventTimeDiff();
     int newCount = pair.decrementCount();
+    
+    // No need to remove - just let the iterator skip exhausted pairs
     if (newCount <= 0) {
       pair.purgeMessageBuffers();
-      pairs.remove(pair);
     }
 
     MessageCreateEvent mce = new MessageCreateEvent(from, to, this.getID(),
