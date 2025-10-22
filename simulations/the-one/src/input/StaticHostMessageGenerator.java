@@ -3,6 +3,7 @@ package input;
 import core.*;
 import interfaces.BluetoothInterface;
 import java.util.*;
+import movement.RandomStationaryCluster;
 public class StaticHostMessageGenerator
     extends SingleMessageGenerator {
   /**
@@ -91,9 +92,8 @@ public class StaticHostMessageGenerator
           }
           if (fromHost != toHost) {
             // Check if this pair is valid for the current mode
-            BluetoothInterface toInterface = (BluetoothInterface) toHost.getInterface(1);
-
-            boolean isValidPair = fromInterface.canConnect(toInterface);
+            boolean isValidPair = (this.mode == Mode.INTER_CLUSTER) || 
+                                 (((RandomStationaryCluster) fromHost.getMovementModel()).isInSameCluster(toHost));
             if (isValidPair) {
               nodeDegree--;
               pairs.add(new HostPair(fromHost, toHost, this.countPerPair));
