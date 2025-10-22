@@ -666,8 +666,16 @@ public abstract class MessageRouter {
 	 */
 	public abstract MessageRouter replicate();
 
-	public void purge() {
-		var messageIDs = new ArrayList<>(this.messages.keySet());
+	/**
+	 * Purge the message buffer from all messages related to a specific host pair
+	 * @param from DTNHost to purge messages from
+	 * @param to DTNHost to purge messages to
+	 */
+	public void purge(DTNHost from, DTNHost to) {
+		var messageIDs = this.messages.values().stream()
+				.filter(m -> m.getFrom() == from && m.getTo() == to)
+				.map(Message::getId)
+				.collect(Collectors.toSet());
 		messageIDs.forEach(messageID -> deleteMessage(messageID, true));
 	}
 

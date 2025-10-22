@@ -46,8 +46,8 @@ public class StaticHostMessageGenerator
     }
 
     public void purgeMessageBuffers() {
-      fromHost.purgeMessageBuffer();
-      toHost.purgeMessageBuffer();
+      fromHost.purgeMessageBuffer(toHost);
+      toHost.purgeMessageBuffer(fromHost);
     }
   }
 
