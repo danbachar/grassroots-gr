@@ -449,7 +449,7 @@ public abstract class ActiveRouter extends MessageRouter {
 	 */
 	protected Connection tryAllMessagesToAllConnections(){
 		List<Connection> connections = getConnections();
-		if (connections.size() == 0 || this.getNrofMessages() == 0) {
+		if (connections.isEmpty() || this.getNrofMessages() == 0) {
 			return null;
 		}
 
@@ -524,13 +524,13 @@ public abstract class ActiveRouter extends MessageRouter {
 	 * @return true if this router is transferring something
 	 */
 	public boolean isTransferring() {
-		if (this.sendingConnections.size() > 0) {
+		if (!this.sendingConnections.isEmpty()) {
 			return true; // sending something
 		}
 
 		List<Connection> connections = getConnections();
 
-		if (connections.size() == 0) {
+		if (connections.isEmpty()) {
 			return false; // not connected
 		}
 
@@ -619,7 +619,7 @@ public abstract class ActiveRouter extends MessageRouter {
 
 		/* time to do a TTL check and drop old messages? Only if not sending */
 		if (SimClock.getTime() - lastTtlCheck >= TTL_CHECK_INTERVAL &&
-				sendingConnections.size() == 0) {
+				sendingConnections.isEmpty()) {
 			dropExpiredMessages();
 			lastTtlCheck = SimClock.getTime();
 		}
