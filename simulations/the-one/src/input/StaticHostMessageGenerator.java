@@ -82,20 +82,13 @@ public class StaticHostMessageGenerator
       
       // Create COUNT messages for each valid host pair
       for (DTNHost fromHost : hosts1) {
-        BluetoothInterface fromInterface = (BluetoothInterface) fromHost.getInterface(1);
-        int nodeDegree = fromInterface.getMaxDegree();
 
         for (DTNHost toHost : hosts2) {
-          if (nodeDegree == 0) {
-            // not really accurate because this should be bidirectional but still better
-            continue;
-          }
           if (fromHost != toHost) {
             // Check if this pair is valid for the current mode
             boolean isValidPair = (this.mode == Mode.INTER_CLUSTER) || 
                                  (((RandomStationaryCluster) fromHost.getMovementModel()).isInSameCluster(toHost));
             if (isValidPair) {
-              nodeDegree--;
               pairs.add(new HostPair(fromHost, toHost, this.countPerPair));
             }
           }
