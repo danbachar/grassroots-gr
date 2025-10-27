@@ -999,7 +999,7 @@ def calculate_centralization_score(node_degrees: list[float], num_links: int) ->
     
     Args:
         node_degrees: List of node degrees
-        num_edges: Number of edges
+        num_links: Number of edges/links between nodes
         
     Returns:
         Centralization score (higher means more centralized)
@@ -1013,7 +1013,7 @@ def calculate_centralization_score(node_degrees: list[float], num_links: int) ->
     if len(degrees) == 0:
         return 0.0
 
-    C = num_edges if num_edges > 0 else 1  # Avoid division by zero
+    C = num_links if num_links > 0 else 1  # Avoid division by zero
 
     # Calculate S = sum((a_i / C)^2) - 1/C
     centralization = sum((a_i / C) ** 2 for a_i in degrees) - (1.0 / C)

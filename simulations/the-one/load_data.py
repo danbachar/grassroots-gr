@@ -179,6 +179,8 @@ def get_host_id_from_host_name(node_name: str) -> str:
         Host ID as a string
     """
     splitted = node_name.split("_")
+    if len(splitted) < 4:
+        raise ValueError(f"Node name '{node_name}' does not conform to expected format 'random_stationary_{{clusterid}}_{{hostid}}'")
     return splitted[3]
 
 def parse_hl_lines_from_unified_report(unified_report_file: str) -> dict[str, HostInfo]:
@@ -191,7 +193,7 @@ def parse_hl_lines_from_unified_report(unified_report_file: str) -> dict[str, Ho
     Returns:
         Dictionary mapping host_name to HostInfo objects
     """
-    hosts = {}
+    hosts: dict[str, HostInfo] = {}
     
     with open(unified_report_file, 'r') as f:
         for line in f:
@@ -298,14 +300,12 @@ def parse_message_transmission_line(line: str) -> None|TransmissionEvent:
         return TransmissionEvent(timestamp, from_node, message_id, action, to_node)
     if (action == 'A') or (action == 'S') or (action == 'DE'):
         to_node = parts[3]
-        if len(parts) < 5: 
-            print("LINE CANNOT BE PARSED")
-            print(line)
-            return None
-        else:
-            message_id = parts[4]
-            extra = parts[5] if action == 'DE' else '' # D for first delivery (message destination received the message/transmission), R for relayed
-            return TransmissionEvent(timestamp, from_node, message_id, action, to_node, extra)
+        message_id = parts[4]
+        extra = parts[5] if action == 'DE' else '' # D for first delivery (message destination received the message/transmission), R for relayed
+        return TransmissionEvent(timestamp, from_node, message_id, action, to_node, extra)
+    if action == 'DR':
+        # handle drop
+        return None
     else:
         print("LINE CANNOT BE PARSED: Action is not recognized")
         print(line)
@@ -562,7 +562,6 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
             msg.source = created_message.source
             msg.target = created_message.target
             
-            # Assign host information for delivered messages
             if msg.source in host_info:
                 msg.source_host = host_info[msg.source]
             if msg.target in host_info:
@@ -716,7 +715,7 @@ def main():
     split_unified_report(scenario_prefix, ranges, runs, message_size, max_degrees)
     
     print("Combining all message data (including undelivered)...")
-    all_messages, delivered_messages = combine_all_message_data(scenario_prefix, ranges, runs, message_size, max_degrees)
+    all_messages, delivered_messages, topologies = combine_all_message_data(scenario_prefix, ranges, runs, message_size, max_degrees)
     print("All message data combined!")
     
     with open("all_messages.pkl", "wb") as f:
@@ -724,6 +723,11 @@ def main():
         
     with open("delivered_messages.pkl", "wb") as f:
         dump(delivered_messages, f)
+    
+    with open("topologies.pkl", "wb") as f:
+        dump(topologies, f)
+    
+    print("Data saved to pickle files: all_messages.pkl, delivered_messages.pkl, topologies.pkl")
 
 if __name__ == "__main__":
     main()
