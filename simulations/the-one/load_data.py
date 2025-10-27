@@ -4,7 +4,44 @@ from argparse import ArgumentParser
 import re
 
 # Disclaimer: Claude 4.0 helped writing this code, especially in plotting.
+class Topology:
+    def __init__(self) -> None:
+        self.connections: dict[str, set[str]] = {}
 
+    def add_connection(self, source: str, target: str) -> None:
+        if source not in self.connections:
+            self.connections[source] = set()
+        self.connections[source].add(target)
+
+    def remove_connection(self, source: str, target: str) -> None:
+        if source in self.connections:
+            self.connections[source].discard(target)
+
+    def get_number_of_links(self) -> int:
+        count = 0
+        links_counted: dict[str, set[str]] = {}
+        for node, neighbors in self.connections.items():
+            for neighbor in neighbors:
+                source, target = tuple(sorted([node, neighbor]))
+                neighbours = links_counted.get(source)
+                if neighbours is None:
+                    links_counted[source] = set([target])
+                    count += 1
+                else:
+                    if target not in neighbours:
+                        count += 1
+                        links_counted[source].add(target)
+        return count
+
+class Configuration:
+    def __init__(self, run_number: int, range: int, max_degree: int, mode: int) -> None:
+        self.run_number = run_number
+        self.range = range
+        self.max_degree = max_degree
+        self.mode = mode
+
+    def __str__(self) -> str:
+        return f"Configuration(run={self.run_number}, range={self.range}, max_degree={self.max_degree}, mode={'intra' if self.mode == 0 else 'inter'})"
 class HostInfo:
     def __init__(self, host_id: str, x: float, y: float) -> None:
         self.host_id = host_id
@@ -382,6 +419,29 @@ def parse_connectivity_report(connectivity_file: str) -> dict[float, dict[str, d
     
     return connectivity_by_time
 
+def get_final_topology(connectivity_by_time: dict[float, dict[str, dict[str, set[str]]]]) -> Topology:
+    """
+    Get the final topology state from connectivity events by replaying all connection/disconnection events.
+    
+    Args:
+        connectivity_by_time: Time-indexed connectivity events
+        
+    Returns:
+        Topology mapping node_id -> set of connected neighbor node_ids
+    """
+    topology: Topology = Topology()
+    
+    for timestamp in sorted(connectivity_by_time.keys()):
+        for node_id, connections in connectivity_by_time[timestamp].items():
+            
+            for connected_id in connections['up']:
+                topology.add_connection(node_id, connected_id)
+            
+            for disconnected_id in connections['down']:
+                topology.remove_connection(node_id, disconnected_id)
+    
+    return topology
+
 def get_neighbors_at_time_for_node(connectivity_state: dict[float, dict[str, dict[str, set[str]]]], 
                            target_time: float, node_name: str) -> set[str]:
     """
@@ -412,7 +472,7 @@ def get_neighbors_at_time_for_node(connectivity_state: dict[float, dict[str, dic
     
     return neighbors
 
-def load_all_created_messages(event_log_file: str, message_size: int, communication_range: float, run: int = 0, scenario_name: str = "") -> list[Message]:
+def load_all_created_messages(event_log_file: str, message_size: int, communication_range: float, run: int = 0, scenario_name: str = "", max_degree: int = 0) -> list[Message]:
     """
     Load all created messages from EventLogReport, including undelivered ones.
     
@@ -422,6 +482,7 @@ def load_all_created_messages(event_log_file: str, message_size: int, communicat
         communication_range: Communication range for this simulation
         run: run number
         scenario_name: scenario name prefix
+        max_degree: constrained max degree
         
     Returns:
         List of all Message objects that were created
@@ -451,9 +512,14 @@ def load_all_created_messages(event_log_file: str, message_size: int, communicat
     
     return created_messages
 
-def combine_run_message_data(run: int, scenario_prefix: str, message_size: int, range_suffix: str, mode: int, max_degree: int) -> tuple[list[Message], list[Message]]:
+def combine_run_message_data(config: Configuration, scenario_prefix: str, message_size: int) -> tuple[list[Message], list[Message], Topology]:
     messages: list[Message] = []
     delivered_messages: list[Message] = []
+
+    run = config.run_number
+    range_suffix = str(config.range)
+    mode = config.mode
+    max_degree = config.max_degree
 
     distance_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_DistanceDelayReport.txt"
     delivered_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_DeliveredMessagesReport.txt"
@@ -461,7 +527,6 @@ def combine_run_message_data(run: int, scenario_prefix: str, message_size: int, 
     eventlog_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_EventLogReport.txt"
     unified_report_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_UnifiedReport.txt"
 
-    # Load host location information from unified report
     host_info = parse_hl_lines_from_unified_report(unified_report_file)
 
     delivered_message_dtos = load_delivered_messages_data(delivered_file)
@@ -477,7 +542,6 @@ def combine_run_message_data(run: int, scenario_prefix: str, message_size: int, 
             msg.hop_count = distance_data[msg.id].hop_count
         msg.mode = mode
         
-        # Assign host information
         if msg.source in host_info:
             msg.source_host = host_info[msg.source]
         if msg.target in host_info:
@@ -486,6 +550,8 @@ def combine_run_message_data(run: int, scenario_prefix: str, message_size: int, 
         messages.append(msg)    
 
     transmissions_data = load_transmission_data(eventlog_file, connectivity_file, delivered_message_dtos)
+    connectivity_by_time = parse_connectivity_report(connectivity_file)
+    final_topology = get_final_topology(connectivity_by_time)
     
     for msg in distance_messages:
         if msg.id in delivered_message_ids:
@@ -512,17 +578,21 @@ def combine_run_message_data(run: int, scenario_prefix: str, message_size: int, 
     
     for msg in created_messages_run + delivered_messages:
         msg.id = f"{msg.id}_run{run}_range{range_suffix}"
-    return created_messages_run, delivered_messages
-        
-def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs: int=100, message_size: int = 247, max_degrees: list[int] = None) -> tuple[list[Message], list[Message]]:
+    
+    return created_messages_run, delivered_messages, final_topology
+
+def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs: int, message_size: int, max_degrees: list[int]) -> tuple[list[Message], list[Message], dict[Configuration, Topology]]:
     """
-    Combine data to get all messages, as well as delivered messages.
+    Combine data to get all messages, as well as delivered messages, and topologies.
 
     Returns:
-        Tuple of (all_messages, delivered_messages)
+        Tuple of (all_messages, delivered_messages, topologies)
+        where topologies is a dict with key (range, mode, max_degree, run) -> topology dict
     """
-    if max_degrees is None:
-        max_degrees = [10]  # default
+    all_messages: list[Message] = []
+    delivered_messages: list[Message] = []
+    delivered_message_ids: set[str] = set()
+    all_topologies: dict[Configuration, Topology] = {}
     
     for max_degree in max_degrees:
         for mode in [0,1]: # 0 for intra, 1 for inter
@@ -531,16 +601,19 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
                 
                 for run in range(1, num_runs + 1):
                     print(f" Processing run {run}/{num_runs}...")
-                    created_messages_run, delivered_messages_run = combine_run_message_data(run, scenario_prefix, message_size, str(range_suffix), mode, max_degree)
+                    config = Configuration(run, range_suffix, max_degree, mode)
+                    created_messages_run, delivered_messages_run, topology = combine_run_message_data(config, scenario_prefix, message_size)
                     
                     all_messages.extend(created_messages_run)
                     delivered_messages.extend(delivered_messages_run)
                     delivered_message_ids.update(msg.id for msg in delivered_messages_run)
-    
+
+                    all_topologies[config] = topology
+
     for msg in all_messages:
         msg.is_delivered = msg.id in delivered_message_ids
     
-    return all_messages, delivered_messages
+    return all_messages, delivered_messages, all_topologies
 
 def load_transmission_data(event_log_file: str, connectivity_file: str, delivered_messages_with_hops: list[DeliveredMessageDTO]) -> dict[str, Transmission]:
     """
@@ -557,7 +630,7 @@ def load_transmission_data(event_log_file: str, connectivity_file: str, delivere
     
     return parse_message_transmissions(event_log_file, delivered_messages_with_hops, connectivity_by_time)
 
-def split_unified_report_to_report_paths(unified_report_file_path: str, distance_file_path: str, delivered_file_path: str, connectivity_file_path: str, eventlog_file_path: str, hl_file_path: str = None):
+def split_unified_report_to_report_paths(unified_report_file_path: str, distance_file_path: str, delivered_file_path: str, connectivity_file_path: str, eventlog_file_path: str, hl_file_path: str):
     # report identifiers can be:
     # DD for distance delay report
     # DM for delivered messages report
@@ -568,7 +641,7 @@ def split_unified_report_to_report_paths(unified_report_file_path: str, distance
     delivered_messages_row_identifier="DM"
     connectivity_row_identifier="CO"
     event_log_row_identifier="EL"
-    host_location_row_identifier="HL"
+    host_location_row_identifier="HL:"
 
     with open(unified_report_file_path, "r") as unified_report_file, open(distance_file_path, "w") as distance_file, open(delivered_file_path, "w") as delivered_file, open(connectivity_file_path, "w") as connectivity_file, open(eventlog_file_path, "w") as eventlog_file:
         hl_file = None
@@ -580,8 +653,8 @@ def split_unified_report_to_report_paths(unified_report_file_path: str, distance
             if not line or line.startswith('#'):
                 continue
             
-            # Handle HL lines that don't have the same format
-            if line.startswith('HL:'):
+            # TODO: improve this
+            if line.startswith(host_location_row_identifier):
                 if hl_file:
                     hl_file.write(line + "\n")
                 continue
@@ -605,9 +678,7 @@ def split_unified_report_to_report_paths(unified_report_file_path: str, distance
         if hl_file:
             hl_file.close()
 
-def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, message_size: int = 247, max_degrees: list[int] = None):
-    if max_degrees is None:
-        max_degrees = [10]
+def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, message_size: int, max_degrees: list[int]):
     for max_degree in max_degrees:
         for range_suffix in ranges:
             for run in range(1, runs + 1):
@@ -629,6 +700,7 @@ def main():
     parser.add_argument("--ranges", type=int, nargs="+", default=DEFAULT_RANGES, help="List of communication ranges to process. Default is " + str(DEFAULT_RANGES))
     parser.add_argument("--runs", type=int, default=DEFAULT_NUM_RUNS, help="Number of runs to process for each range. Default is " + str(DEFAULT_NUM_RUNS))
     parser.add_argument("--scenario-name", type=str, default="GR", help="Scenario name to process for the reports " + str(DEFAULT_SCENARIO_NAME))
+    parser.add_argument("--message-size", type=int, default=DEFAULT_MESSAGE_SIZE, help="Message size used in the simulation filenames. Default is " + str(DEFAULT_MESSAGE_SIZE))
     parser.add_argument("--max-degrees", type=int, nargs="+", default=[1,2,3,4,5,6,7,8,9,10], help="List of max node degrees to process")
 
     args = parser.parse_args()
