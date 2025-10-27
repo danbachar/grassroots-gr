@@ -42,6 +42,7 @@ public class BluetoothInterface extends NetworkInterface {
         this.maxDegree = ni.maxDegree;
     }
 
+    @Override
     public NetworkInterface replicate() {
         return new BluetoothInterface(this);
     }
@@ -149,6 +150,7 @@ public class BluetoothInterface extends NetworkInterface {
      * 
      * @param anotherInterface The interface to create the connection to
      */
+    @Override
     public void createConnection(NetworkInterface anotherInterface) {
         if (!isConnected(anotherInterface) && (this != anotherInterface)) {
             Connection con = new LimitedMTUConnection(this.host, this,
@@ -186,6 +188,7 @@ public class BluetoothInterface extends NetworkInterface {
      * 
      * @return a string representation of the object.
      */
+    @Override
     public String toString() {
         return "BluetoothInterface " + super.toString();
     }
@@ -206,31 +209,72 @@ public class BluetoothInterface extends NetworkInterface {
 
 class BluetoothLEBitrateCalculator {
 
-    // Constants
-    public static final double BANDWIDTH_HZ = 1_000_000.0; // 1 MHz channel bandwidth
-    public static final double TX_POWER_DBM = 0.0; // Transmit power in dBm
-    public static final double PATH_LOSS_EXPONENT = 2.0; // Free space exponent
-    public static final double REFERENCE_DISTANCE_M = 1.0; // Reference distance d0 in meters
-    public static final double PATH_LOSS_AT_REF_DB = 40.0; // Empirical PL(d0) at 1m for 2.4 GHz
-    public static final double NOISE_FLOOR_DBM = -85.0; // Noise floor (dBm) at 1 MHz BW
+    public static final double BANDWIDTH_HZ = 2_000_000.0; // 2 MHz channel bandwidth for BLE
+    public static final double TX_POWER_DBM = 12; // Transmit power in dBm from testbed results using Raspberry Pi 3b+
+    public static final double NOISE_FLOOR_DBM = -85.0; // Noise floor (dBm) at 1 MHz BW TODO: measure this
+    public static final double ALPHA = 2.271; // Path loss exponent from empirical data
 
-    // Gaussian shadowing (optional, set to 0.0 if not needed)
-    public static final double SHADOWING_DB = 0.0;
+    // Empirical data: Distance (m) -> Mean RSSI (dBm)
+    private static final java.util.TreeMap<Double, Double> empiricalRSSI = new java.util.TreeMap<>();
 
-    // Get path loss in dB for a given distance
-    private static double getPathLoss(double distanceMeters) {
-        if (distanceMeters < REFERENCE_DISTANCE_M) {
-            distanceMeters = REFERENCE_DISTANCE_M;
+    // Use testbed bluetooth measurements
+    static {
+        // Path Loss = TX_POWER_DBM - Mean RSSI
+        empiricalRSSI.put(0.0, TX_POWER_DBM - (-17.21));
+        empiricalRSSI.put(0.5, TX_POWER_DBM - (-39.51));
+        empiricalRSSI.put(1.0, TX_POWER_DBM - (-46.93));
+        empiricalRSSI.put(1.5, TX_POWER_DBM - (-57.95));
+        empiricalRSSI.put(2.0, TX_POWER_DBM - (-67.95));
+        empiricalRSSI.put(5.0, TX_POWER_DBM - (-72.85));
+        empiricalRSSI.put(7.5, TX_POWER_DBM - (-82.49));
+        empiricalRSSI.put(10.0, TX_POWER_DBM - (-88.79));
+        empiricalRSSI.put(20.0, TX_POWER_DBM - (-97.20));
+        empiricalRSSI.put(30.0, TX_POWER_DBM - (-93.50));
+        empiricalRSSI.put(60.0, TX_POWER_DBM - (-91.48));
+        empiricalRSSI.put(70.0, TX_POWER_DBM - (-94.57));
+        empiricalRSSI.put(80.0, TX_POWER_DBM - (-95.39));
+        empiricalRSSI.put(90.0, TX_POWER_DBM - (-92.86));
+        empiricalRSSI.put(110.0, TX_POWER_DBM - (-95.17));
+        empiricalRSSI.put(120.0, TX_POWER_DBM - (-95.86));
+    }
+
+    // Get RSSI in dBm for a given distance using log-distance path loss model
+    // Formula: RSSI_d = A - 10*alpha*log10(d/d0)
+    // where A is the RSSI at distance d0=0.0m (reference distance)
+    // and d is the target distance from d0
+    // Returns null for distances outside the empirical range
+    private static Double getRSSI(double distanceMeters) {
+        if (distanceMeters < 0) {
+            return null;
         }
-        return PATH_LOSS_AT_REF_DB + 10 * PATH_LOSS_EXPONENT * Math.log10(distanceMeters / REFERENCE_DISTANCE_M)
-                + SHADOWING_DB;
+
+        // use the nearest smaller key as the reference point (d0)
+        double d0 = empiricalRSSI.floorKey(distanceMeters);
+        double A = empiricalRSSI.get(d0); // RSSI at d0
+
+        if (distanceMeters == 0.0) {
+            return A; // no interpolation
+        }
+
+        if (distanceMeters > empiricalRSSI.lastKey()) {
+            return null;
+        }
+
+        // Use log-distance path loss model: RSSI_d = A - 10*alpha*log10(d)
+        // Apply the formula: RSSI_d = A - 10*alpha*log10(d/d0)
+        if (d0 == 0.0) {
+            d0 = 0.01; // avoid null division through log(0)
+        }
+        double rssi = A - 10.0 * ALPHA * Math.log10(distanceMeters / d0);
+        
+        return rssi;
     }
 
     // Get SNR (linear ratio) from transmit power and path loss
     private static double getSNR(double distanceMeters) {
-        double receivedPower_dBm = TX_POWER_DBM - getPathLoss(distanceMeters);
-        double snr_dB = receivedPower_dBm - NOISE_FLOOR_DBM;
-        return Math.pow(10.0, snr_dB / 10.0); // Convert from dB to linear
+        double receivedPower = TX_POWER_DBM - getRSSI(distanceMeters);
+        double SNR = receivedPower - NOISE_FLOOR_DBM;
+        return Math.pow(10.0, SNR / 10.0); // Convert from dB to linear
     }
 
     // Compute bitrate using Shannon capacity (bps)
@@ -239,15 +283,8 @@ class BluetoothLEBitrateCalculator {
         // Shannon capacity: C = B * log2(1 + SNR)
         double capacity = BANDWIDTH_HZ * Math.log(1 + snr) / Math.log(2.0); // Shannon capacity in bps
 
-        // Scale the capacity to ensure 1 Mbit/s at reference distance (1 meter)
-        double snrAtRef = getSNR(REFERENCE_DISTANCE_M);
-        double capacityAtRef = BANDWIDTH_HZ * Math.log(1 + snrAtRef) / Math.log(2.0);
-        double scalingFactor = 1_000_000.0 / capacityAtRef; // Scale to get 1 Mbit/s at 1m
-
-        double scaledCapacity = capacity * scalingFactor;
-
-        // Avoid exceeding realistic BLE limits
-        return Math.min(scaledCapacity, 1_000_000.0);
+        // Use 1M PHY
+        return Math.max(0, Math.min(capacity, 1_000_000.0));
     }
 
     public static double getBitrateKiloBytesPerSec(double distanceMeters) {
@@ -255,9 +292,81 @@ class BluetoothLEBitrateCalculator {
     }
 
     public static void main(String[] args) {
-        for (int d = 0; d <= 200; d += 20) {
-            double kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
-            System.out.printf("%dm,%.0fkB/s\n", d, kbps);
-        }
+        System.out.println("Bitrate based on empirical data:");
+        double d = 0.0;
+        double kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 0.5;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 1.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 1.5;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 2.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 5.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 7.5;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 10.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 20.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 30.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 40.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 50.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 60.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 70.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 80.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 90.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 100.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 110.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
+
+        d = 120.0;
+        kbps = BluetoothLEBitrateCalculator.getBitrateKiloBytesPerSec(d);
+        System.out.printf("%.1fm, %.2fkB/s\n", d, kbps);
     }
 }
