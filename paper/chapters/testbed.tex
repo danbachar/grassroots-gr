@@ -1,0 +1,9 @@
+To measure the performance characteristics, we decided to measure the Received Signal Strength Indicator (RSSI) of BLE advertisements as received by peer nodes in the testbed, in increasing distances, to measure the signal coverage, and how it propagates in free space.
+Initially contemplating WiFi as well, we decided to focus on Bluetooth as it is more power efficient, and requires no network infrastructure.
+Furthermore, Bluetooth Low Energy (BLE) was picked over classic Basic Rate/Enhanced Data Rate (BR/EDR), as it is even more efficient for (small) message exchanges.
+BLE advertisements form the bottleneck of BLE communications, as they are used to discover neighbours and establish connections between nodes in an unstructured peer-to-peer network based on BLE.
+To discover peers, nodes have to actively scan for BLE advertisements from other nodes, and not advertise at the same time, due to the half-duplex nature of BLE.
+
+Our testbed consists of a set of Raspberry Pi 3B+ devices, using the built-in Bluetooth 4.2 as well as LE supporting chip Cypress CYW43455, and external power supplies of 5v/3.4A to ensure stable operation and mobility.
+The Raspberry Pis were flashed with a lightweight 64-bit Linux port (Raspberry Pi OS Lite based on Debian Trixie), upon which the basic Bluetooth stack was installed using BlueZ 5.66.
+The intention in this part of the paper, was to provide empirical evidence of the signal performance characteristics of BLE, so that they may be used as parameters in the ONE simulation.

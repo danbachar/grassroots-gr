@@ -1,1 +1,20 @@
-Decentralised administration is one of the basic enablers of the growth of the Internet as a whole, thanks to the autonomous 
+Decentralised administration is one of the basic enablers of the growth of the Internet as a whole, thanks to the autonomous organization of different Internet Service Providers.
+Different countries and geographical regions around the world have different characteristics of centralization around their service providers, which affects the Internet usage patterns of their residents, their resilience, and actually how well they can mitigate outages, by using a mixture of both endemic as well as external providers.
+In \cite{dependence} Habib et al. study patterns of web service hosting in different countries, focusing on websites, CA authorities, and more. Habib et al. demonstrate how countries with higher centralization around a smaller number of hosting providers are more subsceptible to outages, and propose a metric called the Centralization Score $\mathcal{S}$, which measures the centralization of website hosting around a small number of providers, and derive it from the Herfindahl-Hirschmann Index (HHI), which is used to measure market competition in US antitrust laws.
+Habib et al. showed how Thailand, that has over 60\% of all websites hosted by its most popular provider, starkly contrasts with Iran, which has a more distributed hosting landscape with its top provider account for only 14\% of all websites, while 90\% of all websites are distributed across 80 different providers.
+To use the different sparsity metrics we will introduce, we defined node degree, or the number of connections a node has to other nodes in the topology, as the sparsity measurement: the more similar the node degree ranks are to each other, the more distributed and less sparse a topology is, and vice-versa: more sparse node degrees make the topology more centralized, as a relatively small number of hosts are connected to a large amount of nodes, and most nodes are connected to a small amount of nodes.
+The Centralization Score $\mathcal{S}$ is defined as follows:
+$$
+\mathcal{S} = \sum_{i=0}^n (\frac{a_i}{C})^2 - \frac{1}{C}
+$$
+where $C$ is the total number of websites considered, $a_i$ is the number of websites hosted by provider $i$, and $n$ is the total number of providers.
+In this paper, we define $C$ as the total number of links between nodes, $a_i$ is the node degree of node $i$, and $n$ is the total number of nodes.
+Hurley and Rickard compare different measures of sparsity\cite{sparsity}, and rank different known sparsity measures according to six desirable criteria that a sparsity measure should satisfy, among them the Robin Hood axiom ("stealing from the rich and giving to the poor": distributing websites over multiple providers instead of a single provider reduces sparsity), the Scaling axiom (sparsity is scale-invariant), and the Rising Tide axiom (sparsity is decreased by adding a constant to all coefficients). Hurley et al. prove that amongst the most common methods to measure sparsity, the Gini coefficient outperformed all other measurements, and satisfies all six criteria.
+The Gini coefficient, a metric commonly associated with the Human Development Index to measure income inequality around the world, is calculated as follows:
+$$
+G = \frac{\sum_{i=0}^n \sum_{j=0}^n |a_i - a_j|}{2n \sum_{i=0}^n a_i}
+$$
+Where $a_i$ is the node degree of node $i$, and $n$ is the total number of nodes.
+Hurley and Rickard's work allows us to effectively use tried-and-tested economical metrics to measure the sparsity of our experiment topologies.
+In this paper, we use the the Centralisation Score $\mathcal{S}$ to compare different topologies and rank them according to their centralization and sparsity metrics.
+% We calculate the Centralization Score $\mathcal{S}$ and the Gini coefficient $G$ on the node degree vector of each topology we generate, and use these metrics to compare different topologies.

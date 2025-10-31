@@ -87,6 +87,15 @@ else
   BOLD := ""
 endif
 
+STANDALONE_CHAPTERS := standalone_abstract
+STANDALONE_PDFS := $(STANDALONE_CHAPTERS:%=%.pdf)
+
+.PHONY: chapters
+chapters: $(STANDALONE_PDFS) ## Build all chapters as individual PDFs
+
+.PHONY: abstract intro background methodology results analysis discussion
+abstract: standalone_abstract.pdf ## Build abstract chapter
+
 -include Makefile.conf.mk
 
 # skip linebreaks in the log file
