@@ -42,6 +42,17 @@ class Configuration:
 
     def __str__(self) -> str:
         return f"Configuration(run={self.run_number}, range={self.range}, max_degree={self.max_degree}, mode={'intra' if self.mode == 0 else 'inter'})"
+    
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, Configuration):
+            return False
+        return (self.run_number == other.run_number and 
+                self.range == other.range and 
+                self.max_degree == other.max_degree and 
+                self.mode == other.mode)
+    
+    def __hash__(self) -> int:
+        return hash((self.run_number, self.range, self.max_degree, self.mode))
 class HostInfo:
     def __init__(self, host_id: str, x: float, y: float) -> None:
         self.host_id = host_id
