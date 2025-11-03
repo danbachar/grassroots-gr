@@ -5,17 +5,29 @@ import re
 
 # Disclaimer: Claude 4.0 helped writing this code, especially in plotting.
 class Topology:
-    def __init__(self) -> None:
-        self.connections: dict[str, set[str]] = {}
+    def __init__(self, node_ids: list[str]) -> None:
+        self.connections: dict[str, set[str]] = { node_id: set() for node_id in node_ids }
 
     def add_connection(self, source: str, target: str) -> None:
         if source not in self.connections:
-            self.connections[source] = set()
+            raise KeyError(f"Source node '{source}' not in topology.")
+        if target not in self.connections:
+            raise KeyError(f"Target node '{target}' not in topology.")
         self.connections[source].add(target)
+        self.connections[target].add(source)
 
     def remove_connection(self, source: str, target: str) -> None:
-        if source in self.connections:
-            self.connections[source].discard(target)
+        if source not in self.connections:
+            raise KeyError(f"Source node '{source}' not in topology.")
+        if target not in self.connections[source]:
+            raise KeyError(f"Target node '{target}' not connected to '{source}'.")
+        if target not in self.connections:
+            raise KeyError(f"Source node '{target}' not in topology.")
+        if source not in self.connections[target]:
+            raise KeyError(f"Target node '{source}' not connected to '{target}'.")
+        
+        self.connections[source].discard(target)
+        self.connections[target].discard(source)
 
     def get_number_of_links(self) -> int:
         count = 0
@@ -430,17 +442,18 @@ def parse_connectivity_report(connectivity_file: str) -> dict[float, dict[str, d
     
     return connectivity_by_time
 
-def get_final_topology(connectivity_by_time: dict[float, dict[str, dict[str, set[str]]]]) -> Topology:
+def get_final_topology(node_ids: list[str], connectivity_by_time: dict[float, dict[str, dict[str, set[str]]]]) -> Topology:
     """
     Get the final topology state from connectivity events by replaying all connection/disconnection events.
     
     Args:
+        node_ids: List of all node ids
         connectivity_by_time: Time-indexed connectivity events
         
     Returns:
         Topology mapping node_id -> set of connected neighbor node_ids
     """
-    topology: Topology = Topology()
+    topology: Topology = Topology(node_ids)
     
     for timestamp in sorted(connectivity_by_time.keys()):
         for node_id, connections in connectivity_by_time[timestamp].items():
@@ -539,7 +552,8 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
     unified_report_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_UnifiedReport.txt"
 
     host_info = parse_hl_lines_from_unified_report(unified_report_file)
-
+    node_ids = [h.host_id for h in host_info.values()]
+    
     delivered_message_dtos = load_delivered_messages_data(delivered_file)
     delivered_message_ids = set(msg.id for msg in delivered_message_dtos)
     distance_messages = load_distance_delay_data(distance_file, mode, delivered_message_ids, run, scenario_prefix, message_size, max_degree)
@@ -562,7 +576,7 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
 
     transmissions_data = load_transmission_data(eventlog_file, connectivity_file, delivered_message_dtos)
     connectivity_by_time = parse_connectivity_report(connectivity_file)
-    final_topology = get_final_topology(connectivity_by_time)
+    final_topology = get_final_topology(node_ids, connectivity_by_time)
     
     for msg in distance_messages:
         if msg.id in delivered_message_ids:
