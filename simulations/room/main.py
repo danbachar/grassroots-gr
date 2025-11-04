@@ -21,8 +21,8 @@ if __name__ == "__main__":
     
     # hardcoded for now
     hall_points = [
-        (0, 0), (480, 0), (480, 240),
-        (240, 240), (240, 480), (0, 480)
+        (0, 0), (400, 0), (400, 200),
+        (200, 200), (200, 400), (0, 400)
     ]
 
     # adjust for offset
@@ -33,11 +33,11 @@ if __name__ == "__main__":
     
     rooms = {"hall": hall}
 
-    clusters = [(0, 0), (120, 0), (240, 0), (360, 0),
-                (0, 120), (120, 120), (240, 120), (360, 120),
-                (0, 240), (120, 240), (240, 240), (360, 240),
-                (0, 360), (120, 360), (240, 360), (360, 360)]
+    clusters = [(0, 0), (100, 0), (200, 0), (300, 0),
+                (0, 100), (100, 100), (200, 100), (300, 100),
+                (0, 200), (100, 200), (200, 200), (300, 200),
+                (0, 300), (100, 300), (200, 300), (300, 300)]
     clusters = [(x + x_offset, y + y_offset) for (x, y) in clusters]
-    Room.draw_map(rooms, clusters=clusters, cluster_size=120, output_path=data_dir / f"{room_name}.png", 
-                  image_width=580, image_height=580, mirrored=mirrored)
+    Room.draw_map(rooms, clusters=clusters, cluster_size=100, output_path=data_dir / f"{room_name}.png", 
+                  image_width=500, image_height=500, mirrored=mirrored)
     

@@ -715,7 +715,7 @@ def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, mes
                     unified_report_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_UnifiedReport.txt"
                     split_unified_report_to_report_paths(unified_report_file_path, distance_file_path, delivered_file_path, connectivity_file_path, eventlog_file_path, hl_file_path)
 def main():
-    DEFAULT_RANGES = [1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+    DEFAULT_RANGES = [1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     DEFAULT_NUM_RUNS = 20
     DEFAULT_SCENARIO_NAME = "GR"
     DEFAULT_MESSAGE_SIZE = 247

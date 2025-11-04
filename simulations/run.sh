@@ -6,7 +6,7 @@ DEFAULT_MAX_PARALLEL_JOBS=1
 DEFAULT_NUM_RUNS=50
 DEFAULT_SIZES=(247)
 SCENARIO_NAME="GR"
-DEFAULT_RANGES=(120)
+DEFAULT_RANGES=(100)
 DEFAULT_START=1
 DEFAULT_MAXIMUM_NODE_DEGREES=(1 2 3 4 5 6 7 8 9 10)
 DEFAULT_MODE=1
@@ -26,7 +26,7 @@ print_usage() {
     echo "This script generates random stationary nodes for simulations."
     echo ""
     echo "Example:"
-    echo "  $0 --name GR --jobs 32 --num 25 --sizes 100 1000 10000 --range 12 120"
+    echo "  $0 --name GR --jobs 32 --num 25 --sizes 100 1000 10000 --range 12 100"
 }
 
 while [[ $# -gt 0 ]]; do
