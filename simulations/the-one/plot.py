@@ -625,8 +625,6 @@ def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: di
     plt.tight_layout()
     plt.savefig('figures/centralization_metrics_vs_max_degree.png', dpi=300, bbox_inches='tight')
     plt.close()
-    
-    print("Centralization metrics plot generated successfully!")
 
 def plot_max_degree_vs_throughput_run_comparison(delivered_messages: list[Message], n: int = 20):
     """
@@ -906,27 +904,328 @@ def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
                 bbox_inches='tight', dpi=300)
     plt.close()
 
-def plot_delivery_under_threshold_matrices(all_messages: list[Message], delivered_messages: list[Message], topologies: dict[Configuration, Topology], time_threshold: float = 10.0):
+def plot_centralization_vs_delivery_combined(all_messages: list[Message], delivered_messages: list[Message], topologies: dict[Configuration, Topology], time_threshold: float = 240.0):
     """
-    Generate distance, delivery success, and topology matrix plots for each range and max_degree.
+    Plot Gini coefficient and centralization score vs. delivery probability on a combined dual-axis plot.
     
-    Creates combined plots with both modes (intra-cluster and inter-cluster) as subplots.
-    Layout: 2 rows × 3 columns (6 subplots total)
-    - Top row: intra-cluster (Distance, Delivery, Topology)
-    - Bottom row: inter-cluster (Distance, Delivery, Topology)
-    
-    Since host locations are fixed (not randomized per run), we aggregate delivery statistics
-    across all runs for better statistical significance.
+    This plot shows the relationship between network topology metrics (centralization)
+    and performance (delivery success rate).
     
     Args:
         all_messages: All created messages
         delivered_messages: Successfully delivered messages
+        topologies: Dictionary mapping configuration to topology
+        time_threshold: Time threshold for counting successful deliveries (default 240s)
+    """
+    TOTAL_NODES = 72
+    
+    # Collect data points
+    data_points = []
+    
+    # Get all unique configurations
+    config_keys = set()
+    for msg in all_messages:
+        config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
+    
+    for mode, comm_range, max_deg in config_keys:
+        # Get topology (from run 1, since topology is deterministic)
+        config = Configuration(run_number=1, range=comm_range, max_degree=max_deg, mode=mode)
+        topology = topologies.get(config)
+        
+        if topology is None:
+            continue
+        
+        # Calculate topology metrics
+        degrees_list = []
+        for node_id in range(TOTAL_NODES):
+            node_name = str(node_id)
+            if node_name in topology.connections:
+                degrees_list.append(len(topology.connections[node_name]))
+            else:
+                degrees_list.append(0)
+        
+        gini = calculate_gini_coefficient(degrees_list)
+        num_links = topology.get_number_of_links()
+        s_score = calculate_centralization_score(degrees_list, num_links)
+        
+        # Calculate delivery probability
+        msgs_config = [msg for msg in all_messages 
+                      if msg.mode == mode and msg.communication_range == comm_range 
+                      and msg.max_degree == max_deg]
+        delivered_config = [msg for msg in delivered_messages 
+                           if msg.mode == mode and msg.communication_range == comm_range 
+                           and msg.max_degree == max_deg and msg.delivery_time <= time_threshold]
+        
+        if len(msgs_config) > 0:
+            delivery_prob = len(delivered_config) / len(msgs_config) * 100
+            
+            data_points.append({
+                'mode': mode,
+                'comm_range': comm_range,
+                'max_degree': max_deg,
+                'delivery_prob': delivery_prob,
+                'gini': gini,
+                's_score': s_score
+            })
+    
+    # Create the combined plot with dual y-axes
+    fig, ax1 = plt.subplots(figsize=(12, 8))
+    
+    # Prepare color and marker mappings
+    ranges = sorted(set(d['comm_range'] for d in data_points))
+    max_degrees = sorted(set(d['max_degree'] for d in data_points))
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+    
+    # Plot Gini coefficient on left y-axis
+    for range_idx, comm_range in enumerate(ranges):
+        for deg_idx, max_deg in enumerate(max_degrees):
+            points = [d for d in data_points 
+                     if d['comm_range'] == comm_range and d['max_degree'] == max_deg]
+            
+            if points:
+                x_vals = [p['delivery_prob'] for p in points]
+                y_vals = [p['gini'] for p in points]
+                
+                ax1.scatter(x_vals, y_vals, 
+                          color=colors[range_idx],
+                          marker=markers[deg_idx % len(markers)],
+                          s=100,
+                          alpha=0.7,
+                          edgecolors='black',
+                          linewidths=0.5,
+                          label=f'Gini: {int(comm_range)}m, deg={int(max_deg)}' if deg_idx == 0 else '')
+    
+    ax1.set_xlabel('Delivery Probability (%)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Gini Coefficient', fontsize=12, fontweight='bold', color='blue')
+    ax1.tick_params(axis='y', labelcolor='blue')
+    ax1.set_ylim(0, 1)
+    
+    # Create second y-axis for S-score
+    ax2 = ax1.twinx()
+    
+    for range_idx, comm_range in enumerate(ranges):
+        for deg_idx, max_deg in enumerate(max_degrees):
+            points = [d for d in data_points 
+                     if d['comm_range'] == comm_range and d['max_degree'] == max_deg]
+            
+            if points:
+                x_vals = [p['delivery_prob'] for p in points]
+                y_vals = [p['s_score'] for p in points]
+                
+                ax2.scatter(x_vals, y_vals,
+                          color=colors[range_idx],
+                          marker=markers[deg_idx % len(markers)],
+                          s=100,
+                          alpha=0.4,
+                          edgecolors='red',
+                          linewidths=1.5,
+                          facecolors='none')
+    
+    ax2.set_ylabel('Centralization Score S', fontsize=12, fontweight='bold', color='red')
+    ax2.tick_params(axis='y', labelcolor='red')
+    
+    # Create title with appropriate threshold label
+    threshold_label = "All Deliveries" if time_threshold == float('inf') else f"Time Threshold: {int(time_threshold)}s"
+    plt.title(f'Centralization Metrics vs. Delivery Probability\n({threshold_label})',
+             fontsize=14, fontweight='bold', pad=20)
+    
+    # Create custom legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='blue', 
+               markersize=10, label='Gini (filled)', alpha=0.7, markeredgecolor='black'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
+               markeredgecolor='red', markersize=10, label='S-score (hollow)', linewidth=1.5)
+    ]
+    ax1.legend(handles=legend_elements, loc='upper left', fontsize=10)
+    
+    plt.tight_layout()
+
+    # Create filename with appropriate threshold label
+    threshold_suffix = "all" if time_threshold == float('inf') else f"t{int(time_threshold)}"
+    plt.savefig(f'figures/centralization_vs_delivery_combined_{threshold_suffix}.png', 
+                dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    threshold_display = "all deliveries" if time_threshold == float('inf') else f"threshold={int(time_threshold)}s"
+    print(f"Combined centralization vs delivery plot saved ({threshold_display})")
+
+def plot_centralization_vs_delivery_subplots(all_messages: list[Message], delivered_messages: list[Message], topologies: dict[Configuration, Topology], time_threshold: float = 240.0):
+    """
+    Plot Gini coefficient and centralization score vs. delivery probability as subplots.
+    
+    Creates a 2x2 grid:
+    - Top row: Gini vs Delivery (intra-cluster, inter-cluster)
+    - Bottom row: S-score vs Delivery (intra-cluster, inter-cluster)
+    
+    Args:
+        all_messages: All created messages
+        delivered_messages: Successfully delivered messages
+        topologies: Dictionary mapping configuration to topology
+        time_threshold: Time threshold for counting successful deliveries (default 240s)
+    """
+    TOTAL_NODES = 72
+    
+    # Collect data points
+    data_points = []
+    
+    # Get all unique configurations
+    config_keys = set()
+    for msg in all_messages:
+        config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
+    
+    for mode, comm_range, max_deg in config_keys:
+        # Get topology (from run 1, since topology is deterministic)
+        config = Configuration(run_number=1, range=comm_range, max_degree=max_deg, mode=mode)
+        topology = topologies.get(config)
+        
+        if topology is None:
+            continue
+        
+        # Calculate topology metrics
+        degrees_list = []
+        for node_id in range(TOTAL_NODES):
+            node_name = str(node_id)
+            if node_name in topology.connections:
+                degrees_list.append(len(topology.connections[node_name]))
+            else:
+                degrees_list.append(0)
+        
+        gini = calculate_gini_coefficient(degrees_list)
+        num_links = topology.get_number_of_links()
+        s_score = calculate_centralization_score(degrees_list, num_links)
+        
+        # Calculate delivery probability
+        msgs_config = [msg for msg in all_messages 
+                      if msg.mode == mode and msg.communication_range == comm_range 
+                      and msg.max_degree == max_deg]
+        delivered_config = [msg for msg in delivered_messages 
+                           if msg.mode == mode and msg.communication_range == comm_range 
+                           and msg.max_degree == max_deg and msg.delivery_time <= time_threshold]
+        
+        if len(msgs_config) > 0:
+            delivery_prob = len(delivered_config) / len(msgs_config) * 100
+            
+            data_points.append({
+                'mode': mode,
+                'comm_range': comm_range,
+                'max_degree': max_deg,
+                'delivery_prob': delivery_prob,
+                'gini': gini,
+                's_score': s_score
+            })
+    
+    # Create 2x2 subplot grid
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    
+    mode_names = {0: 'Intra-cluster', 1: 'Inter-cluster'}
+    
+    # Prepare color and marker mappings
+    ranges = sorted(set(d['comm_range'] for d in data_points))
+    max_degrees = sorted(set(d['max_degree'] for d in data_points))
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+    
+    # Plot Gini coefficient (top row)
+    for mode_idx, mode in enumerate([0, 1]):
+        ax = axes[0, mode_idx]
+        
+        for range_idx, comm_range in enumerate(ranges):
+            x_vals = []
+            y_vals = []
+            
+            for max_deg in max_degrees:
+                points = [d for d in data_points 
+                         if d['mode'] == mode and d['comm_range'] == comm_range 
+                         and d['max_degree'] == max_deg]
+                
+                if points:
+                    x_vals.extend([p['delivery_prob'] for p in points])
+                    y_vals.extend([p['gini'] for p in points])
+            
+            if x_vals:
+                ax.scatter(x_vals, y_vals,
+                          color=colors[range_idx],
+                          s=100,
+                          alpha=0.7,
+                          edgecolors='black',
+                          linewidths=0.5,
+                          label=f'{int(comm_range)}m range')
+        
+        ax.set_xlabel('Delivery Probability (%)', fontsize=11)
+        ax.set_ylabel('Gini Coefficient', fontsize=11)
+        ax.set_title(f'Gini vs Delivery - {mode_names[mode]}', fontsize=12, fontweight='bold')
+        ax.set_ylim(0, 1)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best', fontsize=9)
+    
+    # Plot S-score (bottom row)
+    for mode_idx, mode in enumerate([0, 1]):
+        ax = axes[1, mode_idx]
+        
+        for range_idx, comm_range in enumerate(ranges):
+            x_vals = []
+            y_vals = []
+            
+            for max_deg in max_degrees:
+                points = [d for d in data_points 
+                         if d['mode'] == mode and d['comm_range'] == comm_range 
+                         and d['max_degree'] == max_deg]
+                
+                if points:
+                    x_vals.extend([p['delivery_prob'] for p in points])
+                    y_vals.extend([p['s_score'] for p in points])
+            
+            if x_vals:
+                ax.scatter(x_vals, y_vals,
+                          color=colors[range_idx],
+                          s=100,
+                          alpha=0.7,
+                          edgecolors='black',
+                          linewidths=0.5,
+                          label=f'{int(comm_range)}m range')
+        
+        ax.set_xlabel('Delivery Probability (%)', fontsize=11)
+        ax.set_ylabel('Centralization Score S', fontsize=11)
+        ax.set_title(f'S-score vs Delivery - {mode_names[mode]}', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best', fontsize=9)
+    
+    # Create title with appropriate threshold label
+    threshold_label = "All Deliveries" if time_threshold == float('inf') else f"Time Threshold: {int(time_threshold)}s"
+    plt.suptitle(f'Centralization Metrics vs. Delivery Probability\n({threshold_label})',
+                 fontsize=14, fontweight='bold', y=0.995)
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    
+    # Create filename with appropriate threshold label
+    threshold_suffix = "all" if time_threshold == float('inf') else f"t{int(time_threshold)}"
+    plt.savefig(f'figures/centralization_vs_delivery_subplots_{threshold_suffix}.png', 
+                dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    threshold_display = "all deliveries" if time_threshold == float('inf') else f"threshold={int(time_threshold)}s"
+    print(f"Subplot centralization vs delivery plot saved ({threshold_display})")
+
+def plot_topology_and_distance_matrices(all_messages: list[Message], topologies: dict[Configuration, Topology]):
+    """
+    Generate topology and distance matrix plots for each range and max_degree.
+    
+    Creates combined plots with both modes (intra-cluster and inter-cluster) as subplots.
+    Layout: 2 rows × 2 columns (4 subplots total)
+    - Top row: intra-cluster (Distance, Topology)
+    - Bottom row: inter-cluster (Distance, Topology)
+    
+    Args:
+        all_messages: All created messages
         topologies: Dictionary mapping configuration (range, mode, max_degree, run) to topology
-        time_threshold: Time threshold for delivery success calculation
     """
     
     # Create directory for plots
-    plots_dir = "figures/matrix_plots_by_degree"
+    plots_dir = "figures/topology_distance_matrices"
     os.makedirs(plots_dir, exist_ok=True)
     
     # Get unique ranges and max_degrees
@@ -934,43 +1233,28 @@ def plot_delivery_under_threshold_matrices(all_messages: list[Message], delivere
     max_degrees = sorted(set(msg.max_degree for msg in all_messages))
     modes = [0, 1]  # intra-cluster, inter-cluster
     messages_by_degree = { (comm_range, mode, max_deg): [] for comm_range in ranges for max_deg in max_degrees for mode in modes }
-    delivered_by_degree = { (comm_range, mode, max_deg): [] for comm_range in ranges for max_deg in max_degrees for mode in modes }
     for message in all_messages:
         key = (message.communication_range, message.mode, message.max_degree)
         messages_by_degree[key].append(message)
-    for message in delivered_messages:
-        key = (message.communication_range, message.mode, message.max_degree)
-        delivered_by_degree[key].append(message)
+    
     max_range = float(max(ranges))   
     for comm_range in [max_range]:
         for max_deg in max_degrees:
-            print(f"Processing range {comm_range}m, max_degree={max_deg}...")
+            print(f"Processing topology/distance matrices for range {comm_range}m, max_degree={max_deg}...")
             
-            # Create figure with 2 rows × 3 columns
-            fig, axes = plt.subplots(2, 3, figsize=(20, 13))
-            
-            # Store statistics for both modes
-            stats_info = {}
+            # Create figure with 2 rows × 2 columns
+            fig, axes = plt.subplots(2, 2, figsize=(14, 13))
             
             for mode_idx, mode in enumerate(modes):
                 mode_name = "intra" if mode == 0 else "inter"
                 
                 # Filter messages for this range, mode, and max_degree (across all runs)
-                # all_messages_filtered = [msg for msg in all_messages 
-                #                         if msg.communication_range == comm_range 
-                #                         and msg.mode == mode
-                #                         and msg.max_degree == max_deg]
-                # delivered_messages_filtered = [msg for msg in delivered_messages 
-                #                               if msg.communication_range == comm_range 
-                #                               and msg.mode == mode
-                #                               and msg.max_degree == max_deg]
                 all_messages_filtered = messages_by_degree[(comm_range, mode, max_deg)]
-                delivered_messages_filtered = delivered_by_degree[(comm_range, mode, max_deg)]
                 
                 if not all_messages_filtered:
                     print(f"  No messages found for {mode_name} mode")
                     # Mark axes as empty
-                    for col_idx in range(3):
+                    for col_idx in range(2):
                         ax = axes[mode_idx, col_idx]
                         ax.text(0.5, 0.5, f'No data for {mode_name}-cluster', 
                                ha='center', va='center', transform=ax.transAxes, fontsize=14)
@@ -992,10 +1276,107 @@ def plot_delivery_under_threshold_matrices(all_messages: list[Message], delivere
                     print(f"    Warning: No topology found for range {comm_range}, mode {mode}, max_degree {max_deg}, run {runs[0]}")
                     print(f"    Others: {other_topologies}")
                     raise ValueError(f"No topology found for range {comm_range}, mode {mode}, max_degree {max_deg}, run {runs[0]}")
-                    topology_matrix = np.zeros((72, 72))
                 
-                # Calculate matrices
+                # Calculate distance matrix
                 distance_matrix = get_host_distance_matrix(all_messages_filtered)
+                
+                # Plot distance matrix (column 0)
+                ax_dist = axes[mode_idx, 0]
+                im1 = ax_dist.imshow(distance_matrix, cmap='viridis', interpolation='nearest', origin='lower')
+                ax_dist.set_title(f'Distance Matrix - {mode_name.title()}-cluster', 
+                                fontsize=11, fontweight='bold')
+                ax_dist.set_xlabel('Host Index', fontsize=10)
+                ax_dist.set_ylabel('Host Index', fontsize=10)
+                cbar1 = plt.colorbar(im1, ax=ax_dist, label='Distance (m)')
+                
+                # Plot topology matrix (column 1)
+                ax_topo = axes[mode_idx, 1]
+                im2 = ax_topo.imshow(topology_matrix, cmap='binary', interpolation='nearest', 
+                                   vmin=0, vmax=1, origin='lower')
+                ax_topo.set_title(f'Topology - {mode_name.title()}-cluster', 
+                                fontsize=11, fontweight='bold')
+                ax_topo.set_xlabel('Host Index', fontsize=10)
+                ax_topo.set_ylabel('Host Index', fontsize=10)
+                cbar2 = plt.colorbar(im2, ax=ax_topo, label='Link', ticks=[0, 1])
+            
+            # Add overall title
+            fig.suptitle(f'Communication Range: {int(comm_range)}m - Max Degree: {max_deg}', 
+                        fontsize=14, fontweight='bold', y=0.995)
+            
+            plt.tight_layout(rect=[0, 0, 1, 0.99])  # Leave space for suptitle
+            
+            plot_filename = f"{plots_dir}/range{int(comm_range)}_maxdeg{max_deg}_topology_distance.png"
+            plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"  Saved: {plot_filename}")
+
+def plot_delivery_success_matrices(all_messages: list[Message], delivered_messages: list[Message], time_threshold: float = 10.0):
+    """
+    Generate delivery success probability matrix plots for each range and max_degree.
+    
+    Creates plots with both modes (intra-cluster and inter-cluster) as subplots.
+    Layout: 2 rows × 1 column (2 subplots total)
+    - Top: intra-cluster delivery probability
+    - Bottom: inter-cluster delivery probability
+    
+    Args:
+        all_messages: All created messages
+        delivered_messages: Successfully delivered messages
+        time_threshold: Time threshold for delivery success calculation
+    """
+    
+    # Create directory for plots
+    plots_dir = "figures/delivery_success_matrices"
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Get unique ranges and max_degrees
+    ranges = sorted(set(msg.communication_range for msg in all_messages))
+    max_degrees = sorted(set(msg.max_degree for msg in all_messages))
+    modes = [0, 1]  # intra-cluster, inter-cluster
+    
+    messages_by_degree = { (comm_range, mode, max_deg): [] for comm_range in ranges for max_deg in max_degrees for mode in modes }
+    delivered_by_degree = { (comm_range, mode, max_deg): [] for comm_range in ranges for max_deg in max_degrees for mode in modes }
+    
+    for message in all_messages:
+        key = (message.communication_range, message.mode, message.max_degree)
+        messages_by_degree[key].append(message)
+    for message in delivered_messages:
+        key = (message.communication_range, message.mode, message.max_degree)
+        delivered_by_degree[key].append(message)
+    
+    max_range = float(max(ranges))   
+    for comm_range in [max_range]:
+        for max_deg in max_degrees:
+            print(f"Processing delivery success matrices for range {comm_range}m, max_degree={max_deg}, threshold={time_threshold}s...")
+            
+            # Create figure with 2 rows × 1 column
+            fig, axes = plt.subplots(2, 1, figsize=(10, 16))
+            
+            # Store statistics for both modes
+            stats_info = {}
+            
+            for mode_idx, mode in enumerate(modes):
+                mode_name = "intra" if mode == 0 else "inter"
+                
+                # Filter messages for this range, mode, and max_degree (across all runs)
+                all_messages_filtered = messages_by_degree[(comm_range, mode, max_deg)]
+                delivered_messages_filtered = delivered_by_degree[(comm_range, mode, max_deg)]
+                
+                if not all_messages_filtered:
+                    print(f"  No messages found for {mode_name} mode")
+                    # Mark axes as empty
+                    ax = axes[mode_idx]
+                    ax.text(0.5, 0.5, f'No data for {mode_name}-cluster', 
+                           ha='center', va='center', transform=ax.transAxes, fontsize=14)
+                    ax.set_xticks([])
+                    ax.set_yticks([])
+                    continue
+                
+                # Get runs for statistics
+                runs = sorted(set(msg.run for msg in all_messages_filtered))
+                
+                # Calculate delivery success matrix
                 success_matrix = get_delivery_success_matrix(all_messages_filtered, delivered_messages_filtered, time_threshold)
                 
                 # Calculate statistics
@@ -1009,39 +1390,28 @@ def plot_delivery_under_threshold_matrices(all_messages: list[Message], delivere
                     'n_runs': len(runs)
                 }
                 
-                # Plot distance matrix (column 0)
-                ax_dist = axes[mode_idx, 0]
-                im1 = ax_dist.imshow(distance_matrix, cmap='viridis', interpolation='nearest', origin='lower')
-                ax_dist.set_title(f'Distance Matrix - {mode_name.title()}-cluster', 
-                                fontsize=11, fontweight='bold')
-                ax_dist.set_xlabel('Host Index', fontsize=10)
-                ax_dist.set_ylabel('Host Index', fontsize=10)
-                cbar1 = plt.colorbar(im1, ax=ax_dist, label='Distance (m)')
+                # Plot delivery success matrix
+                ax = axes[mode_idx]
+                im = ax.imshow(success_matrix, cmap='RdYlGn', interpolation='nearest', 
+                              vmin=0, vmax=1, origin='lower')
+                ax.set_title(f'Delivery Probability - {mode_name.title()}-cluster\nTime Threshold: {int(time_threshold)}s', 
+                           fontsize=12, fontweight='bold')
+                ax.set_xlabel('Host Index', fontsize=10)
+                ax.set_ylabel('Host Index', fontsize=10)
+                cbar = plt.colorbar(im, ax=ax, label='Delivery Probability')
                 
-                # Plot delivery success matrix (column 1)
-                ax_delivery = axes[mode_idx, 1]
-                im2 = ax_delivery.imshow(success_matrix, cmap='RdYlGn', interpolation='nearest', 
-                                       vmin=0, vmax=1, origin='lower')
-                ax_delivery.set_title(f'Delivery Probability - {mode_name.title()}-cluster - Time Threshold: {int(time_threshold)}s', 
-                                    fontsize=11, fontweight='bold')
-                ax_delivery.set_xlabel('Host Index', fontsize=10)
-                ax_delivery.set_ylabel('Host Index', fontsize=10)
-                cbar2 = plt.colorbar(im2, ax=ax_delivery, label='Delivery Probability')
-                
-                # Plot topology matrix (column 2)
-                ax_topo = axes[mode_idx, 2]
-                im3 = ax_topo.imshow(topology_matrix, cmap='binary', interpolation='nearest', 
-                                   vmin=0, vmax=1, origin='lower')
-                ax_topo.set_title(f'Topology - {mode_name.title()}-cluster', 
-                                fontsize=11, fontweight='bold')
-                ax_topo.set_xlabel('Host Index', fontsize=10)
-                ax_topo.set_ylabel('Host Index', fontsize=10)
-                cbar3 = plt.colorbar(im3, ax=ax_topo, label='Link', ticks=[0, 1])
+                # Add statistics text
+                stats_text = f"Messages: {n_messages:,}\nDelivered: {n_delivered:,}\nRate: {delivery_rate:.1f}%\nRuns: {len(runs)}"
+                ax.text(0.02, 0.98, stats_text,
+                       transform=ax.transAxes,
+                       verticalalignment='top',
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                       fontsize=9)
                 
                 print(f"    {mode_name.title()}-cluster: {n_messages:,} messages, {delivery_rate:.1f}% delivery rate")
             
             # Add overall title
-            fig.suptitle(f'Communication Range: {int(comm_range)}m - Max Degree: {max_deg} - {len(runs)} runs', 
+            fig.suptitle(f'Delivery Success Probability\nRange: {int(comm_range)}m - Max Degree: {max_deg} - {len(runs)} runs', 
                         fontsize=14, fontweight='bold', y=0.995)
             
             plt.tight_layout(rect=[0, 0, 1, 0.99])  # Leave space for suptitle
@@ -1085,10 +1455,23 @@ def main():
     print("Generating max degree vs. centralization metrics plots...")
     plot_metrics_vs_max_degree(delivered_messages, topologies)
 
-    print("Generating topological delivery success plots...")
-    plot_delivery_under_threshold_matrices(all_messages, delivered_messages, topologies, time_threshold=10.0)
-    plot_delivery_under_threshold_matrices(all_messages, delivered_messages, topologies, time_threshold=60.0)
-    plot_delivery_under_threshold_matrices(all_messages, delivered_messages, topologies, time_threshold=240.0)
+    print("Generating centralization vs. delivery probability plots...")
+    # Generate plots with different time thresholds
+    plot_centralization_vs_delivery_combined(all_messages, delivered_messages, topologies, time_threshold=float('inf'))  # All deliveries
+    plot_centralization_vs_delivery_combined(all_messages, delivered_messages, topologies, time_threshold=10.0)
+    plot_centralization_vs_delivery_combined(all_messages, delivered_messages, topologies, time_threshold=240.0)
+    
+    plot_centralization_vs_delivery_subplots(all_messages, delivered_messages, topologies, time_threshold=float('inf'))  # All deliveries
+    plot_centralization_vs_delivery_subplots(all_messages, delivered_messages, topologies, time_threshold=10.0)
+    plot_centralization_vs_delivery_subplots(all_messages, delivered_messages, topologies, time_threshold=240.0)
+
+    print("Generating topology and distance matrix plots...")
+    plot_topology_and_distance_matrices(all_messages, topologies)
+
+    print("Generating delivery success probability plots...")
+    plot_delivery_success_matrices(all_messages, delivered_messages, time_threshold=10.0)
+    plot_delivery_success_matrices(all_messages, delivered_messages, time_threshold=60.0)
+    plot_delivery_success_matrices(all_messages, delivered_messages, time_threshold=240.0)
 
     print("\nAll plots generated successfully!")
 
