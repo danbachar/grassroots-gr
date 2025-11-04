@@ -1,4 +1,4 @@
-# python plot_rssi.py --input-dir ranges --num-runs 20 --output-dir soccer_field_plots
+# python plot_rssi.py --input-dir ./ranges --output-dir ./plots
 #!/usr/bin/env python3
 from pathlib import Path
 from os import listdir, makedirs
@@ -7,6 +7,45 @@ import matplotlib.pyplot as plt
 import numpy as np
 from collections import defaultdict
 import time
+import re
+
+def parse_summary_file(filepath: Path) -> dict[int, tuple[float, float]]:
+    """
+    Parse a summary file and extract start/end timestamps for each run.
+    
+    Returns:
+        dict mapping run_number -> (start_timestamp, end_timestamp)
+    """
+    timestamps = {}
+    
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+    
+    current_run = None
+    start_ts = None
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Check for start timestamp
+        if 'Start Timestamp:' in line:
+            match = re.search(r'Run (\d+) Start Timestamp:\s*([\d.]+)', line)
+            if match:
+                current_run = int(match.group(1))
+                start_ts = float(match.group(2))
+        
+        # Check for end timestamp
+        elif 'End Timestamp:' in line and current_run is not None:
+            match = re.search(r'Run \d+ End Timestamp:\s*([\d.]+)', line)
+            if match:
+                end_ts = float(match.group(1))
+                timestamps[current_run] = (start_ts, end_ts)
+                current_run = None
+                start_ts = None
+    
+    return timestamps
 
 def plot_rssi_vs_distance(distance_rssi_data: dict[float, list[float]], output_dir: str):
     distances: list[float] = []
@@ -15,12 +54,21 @@ def plot_rssi_vs_distance(distance_rssi_data: dict[float, list[float]], output_d
     all_rssi_points: list[float] = []
     all_distance_points: list[float] = []
     
+    print("\nRSSI Statistics by Distance:")
+    print("Distance (m)\tMin RSSI\tMean RSSI\tMax RSSI")
+    print("-" * 60)
+    
     for distance in sorted(distance_rssi_data.keys()):
         rssi_values = distance_rssi_data[distance]
         if rssi_values:
+            mean_value = float(np.mean(rssi_values))
+            min_value = float(np.min(rssi_values))
+            max_value = float(np.max(rssi_values))
             distances.append(distance)
-            mean_rssi.append(float(np.mean(rssi_values)))
+            mean_rssi.append(mean_value)
             std_rssi.append(float(np.std(rssi_values)))
+            
+            print(f"{distance:8.1f}\t{min_value:8.2f}\t{mean_value:9.2f}\t{max_value:8.2f}")
 
             # For scatter plot of all points
             all_rssi_points.extend(rssi_values)
@@ -42,7 +90,7 @@ def plot_rssi_vs_distance(distance_rssi_data: dict[float, list[float]], output_d
     plt.tight_layout()
     plt.savefig(f'{output_dir}/rssi_vs_distance.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved RSSI vs distance plot to {output_dir}/rssi_vs_distance.png")
+    print(f"\nSaved RSSI vs distance plot to {output_dir}/rssi_vs_distance.png")
 
 def plot_density(distance_rssi_data: dict[float, list[float]], output_dir: str, bin_size: int = 30, ranges_to_plot: Optional[list[float]]=None):
     """Plot probability density of RSSI values for each distance in separate subplots
@@ -155,25 +203,15 @@ def plot_rssi_vs_time(distance_time_rssi_data: dict[float, dict[float, list[floa
     for i, distance in enumerate(distances):
         time_rssi_data = distance_time_rssi_data[distance]
         
-        # Sort timestamps and calculate statistics
-        before = time.time() * 1000
         timestamps = sorted(time_rssi_data.keys())
-        after = time.time() * 1000
-        # print(f"Sorting all timestamps took {after - before:.4f} ms")
         if not timestamps:
             continue
             
-        # Convert to relative time first
-        before = time.time() * 1000
-        start_time = timestamps[0]
-        relative_times = [(t - start_time) / 1000 for t in timestamps]  # Convert ms to seconds
+        relative_times = np.array(timestamps)
         all_rssi_by_time = [time_rssi_data[t] for t in timestamps]
-        after = time.time() * 1000
-        # print(f"Converting to relative time took {after - before:.4f} ms")
         
-        # Bin the data to reduce noise - group by 10-second intervals
-        before = time.time() * 1000
-        bin_size = 10  # seconds
+        # Bin the data to reduce noise - group by 1-second intervals
+        bin_size = 1  # seconds
         max_time = max(relative_times)
         bins = np.arange(0, max_time + bin_size, bin_size)
 
@@ -185,23 +223,20 @@ def plot_rssi_vs_time(distance_time_rssi_data: dict[float, dict[float, list[floa
             bin_start = bins[j]
             bin_end = bins[j + 1]
             
-            # Find all data points in this bin
-            # start_bin_time = time.time()
-            bin_indices = [k for k, t in enumerate(relative_times) if bin_start <= t < bin_end]
-            # end_bin_time = time.time()
-            # print(f"Binning in bin [{bin_start},{bin_end}] took {end_bin_time - start_bin_time:.4f} ms")
-            if bin_indices:
+            # Use searchsorted for efficient range lookup (O(log n) instead of O(n))
+            start_idx = np.searchsorted(relative_times, bin_start, side='left')
+            end_idx = np.searchsorted(relative_times, bin_end, side='left')
+            
+            if start_idx < end_idx:
                 # Collect all RSSI values in this bin
                 bin_rssi_values: list[float] = []
-                for k in bin_indices:
+                for k in range(start_idx, end_idx):
                     bin_rssi_values.extend(all_rssi_by_time[k])
                 
                 if bin_rssi_values:
                     binned_times.append((bin_start + bin_end) / 2)  # Use middle of bin
                     binned_rssi_mean.append(float(np.mean(bin_rssi_values)))
                     binned_rssi_std.append(float(np.std(bin_rssi_values)))
-        after = time.time() * 1000
-        # print(f"Binning took {after - before:.4f} ms")
         
         if binned_times:
             # Convert to numpy arrays for easier manipulation
@@ -222,7 +257,7 @@ def plot_rssi_vs_time(distance_time_rssi_data: dict[float, dict[float, list[floa
     
     plt.xlabel('Time (seconds)')
     plt.ylabel('RSSI (dBm)')
-    plt.title('RSSI vs Time by Distance (10-second bins with std deviation)')
+    plt.title('RSSI vs Time by Distance (1-second bins with std deviation)')
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
@@ -251,14 +286,14 @@ def plot_timestamp_diff_vs_time(distance_time_rssi_data: dict[float, dict[float,
         if len(timestamps) < 2:
             continue
             
-        # Calculate differences between consecutive timestamps
-        diffs = np.diff(timestamps)
+        # Calculate differences between consecutive timestamps (in seconds)
+        diffs = np.diff(timestamps) * 1000  # Convert to milliseconds
         # The time for each diff is the time of the second measurement
         diff_times = timestamps[1:]
         
-        # Convert to relative time in seconds
+        # Timestamps are in relative time (seconds)
         start_time = timestamps[0]
-        relative_times = [(t - start_time) / 1000 for t in diff_times]
+        relative_times = [t - start_time for t in diff_times]
         
         # Bin the data into a fixed number of bins
         max_time = max(relative_times) if relative_times else 0
@@ -484,28 +519,40 @@ def parse_arguments():
     import argparse
     parser = argparse.ArgumentParser(description="Plot RSSI data from log files")
     parser.add_argument("--input-dir", type=str, default="./ranges", help="Directory containing range subdirectories with log files")
-    parser.add_argument("--num-runs", type=int, default=50, help="Number of runs to aggregate per distance")
     parser.add_argument("--output-dir", type=str, default="./plots", help="Directory to save plots")
     return parser.parse_args()
 
 def main():
     args = parse_arguments()
     ranges: list[str] = list(listdir(args.input_dir))
-    num_runs = args.num_runs
     makedirs(args.output_dir, exist_ok=True)
 
     distance_rssi_data: dict[float, list[float]] = {}
     distance_time_rssi_data: dict[float, dict[float, list[float]]] = defaultdict(lambda: defaultdict(list))
     distance_run_timestamps: dict[float, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list)) # Map distance to run to timestamp differences
 
+    print(f"Processing data from summary files")
+    print("=" * 80)
+
     for range_dir in ranges:
         distance = float(range_dir)
         distance_rssi_data[distance] = []
 
         path_to_range_directory = Path(args.input_dir) / range_dir
+        
+        # Read summary file to get run timestamps
+        summary_file = path_to_range_directory / "rssi_log.csv_summary.csv"
+        if not summary_file.exists():
+            print(f"Warning: No summary file for distance {distance}m, skipping...")
+            continue
+        
+        run_timestamps = parse_summary_file(summary_file)
+        if not run_timestamps:
+            print(f"Warning: No valid run timestamps in summary file for distance {distance}m, skipping...")
+            continue
 
-        # Aggregate all log files up to the supplied run number
-        for run_idx in range(num_runs):
+        # Process each run using timestamps from summary file
+        for run_idx, (run_start_ts, run_end_ts) in run_timestamps.items():
             log_filenames = [f for f in listdir(path_to_range_directory) if f"_run{run_idx}.csv" in f]
             if not log_filenames:
                 continue
@@ -513,14 +560,14 @@ def main():
             log_filename = log_filenames[0]
             full_path_to_logfile = path_to_range_directory / log_filename
 
+            run_start_timestamp_ms = run_start_ts * 1000  # Convert to milliseconds
+            run_end_timestamp_ms = run_end_ts * 1000      # Convert to milliseconds
+            run_duration_ms = run_end_timestamp_ms - run_start_timestamp_ms
+            valid_samples_count = 0
+            skipped_samples_count = 0
+
             with open(full_path_to_logfile, "r") as log_file:
                 for i, line in enumerate(log_file):
-                    if i == 0:
-                        # start line: format is # Run 0 Start Timestamp: 1761981624.858891
-                        continue # TODO: parse run length
-                    if i == 1:
-                        # end line: format is # Run 0 End Timestamp: 1761981684.993195
-                        continue # TODO: parse run length
                     content = line.strip()
                     
                     # format is timestamp in milliseconds, rssi, device name
@@ -536,14 +583,29 @@ def main():
                     timestamp_ms = float(timestamp) * 1000  # convert to milliseconds
                     rssi_value = float(rssi)
                     
-                    # Store for CDF plot
-                    distance_rssi_data[distance].append(rssi_value)
-                    
-                    # Store for time-based plot (group by timestamp)
-                    distance_time_rssi_data[distance][timestamp_ms].append(rssi_value)
-                    
-                    # Store timestamps per run for diff analysis
-                    distance_run_timestamps[distance][run_idx].append(timestamp_ms)
+                    # Only include timestamps within the run's time window from summary
+                    if run_start_timestamp_ms <= timestamp_ms <= run_end_timestamp_ms:
+                        # Store for CDF plot
+                        distance_rssi_data[distance].append(rssi_value)
+                        
+                        # Store for time-based plot using RELATIVE time so runs can be combined
+                        # Use relative time in seconds as the key
+                        time_since_start = timestamp_ms - run_start_timestamp_ms
+                        relative_time_s = time_since_start / 1000
+                        distance_time_rssi_data[distance][relative_time_s].append(rssi_value)
+                        
+                        # Store timestamps per run for diff analysis (keep absolute timestamps here)
+                        distance_run_timestamps[distance][run_idx].append(timestamp_ms)
+                        valid_samples_count += 1
+                    else:
+                        skipped_samples_count += 1
+            
+            if skipped_samples_count > 0:
+                run_duration_s = run_duration_ms / 1000
+                print(f"Distance {distance:6.1f}m, Run {run_idx:2d}: kept {valid_samples_count:5d} samples, skipped {skipped_samples_count:5d} samples (outside {run_duration_s:.0f}s window)")
+
+    print("=" * 80)
+    print("Data processing complete.\n")
 
     plot_rssi_vs_distance(distance_rssi_data, args.output_dir)
     plot_density(distance_rssi_data, args.output_dir, 30)
@@ -551,9 +613,7 @@ def main():
     plot_rssi_vs_time(distance_time_rssi_data, args.output_dir)
     plot_timestamp_diff_vs_time(distance_time_rssi_data, args.output_dir)
     plot_advertisements_per_distance(distance_rssi_data, distance_run_timestamps, args.output_dir)
-
     print_run_durations(distance_run_timestamps)
-
     print("\nSummary Statistics:")
     print("Distance (m)\tMean RSSI (dBm)\tStd Dev\tNum Samples")
     print("-" * 60)
