@@ -36,14 +36,14 @@ Events1.prefix = M
 ## Interface-specific settings:
 # "Bluetooth" interface for all nodes
 bluetoothInterface.type = BluetoothInterface
-bluetoothInterface.transmitRange = 120
+bluetoothInterface.transmitRange = 100
 bluetoothInterface.transmitSpeed = 0 # Dummy setting required for simulator to properly work
 
 #####[START]>Group
 Scenario.nrofHostGroups = 12
 Group.nrofHosts = 6
 Group.numberOfClusters = 12
-Group.clusterSize = 120
+Group.clusterSize = 100
 Group.offsetX = 50
 Group.offsetY = 50
 Group1.clusterID = 0
