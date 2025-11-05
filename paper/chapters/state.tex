@@ -13,18 +13,26 @@ The Centralisation Score$\mathscr{S}$ is derived from the Herfindahl-Hirschmann 
 To use the different sparsity metrics we will introduce, the leading metric I used to measure centralization and sparsity is the node degree: the number of connections a node has to other peers in the network topology.
 An overall similarity between individual node degrees increases the resilience of a topology, as a network partition affecting a subset of the nodes will not result in a complete blackout of the network because many alternative paths still exist.
 The Centralization Score $\mathscr{S}$ is defined as follows:
-$$
+\[
 \mathscr{S} = \sum_{i=0}^n (\frac{a_i}{C})^2 - \frac{1}{C}
-$$
+\]
 where $C$ is the total number of websites considered, $a_i$ is the number of websites hosted by provider $i$, and $n$ is the total number of providers.
 In this paper, $C$ is defined as the total number of links between nodes, $a_i$ is the node degree of node $i$, and $n$ is the total number of nodes. Formally, let $\mathcal{G} = (V,E)$ be a graph, where $\mathcal{V}$ is the set of nodes (vertices), and $\mathcal{E}$ is the set of links (edges). If $(i,j)\in \mathcal{E}$ then $(j,i)\in \mathcal{E}$, i.e., links are bidirectional.
 There can only exist one link between every pair of nodes, a link increases the node degree of both participating nodes by one, and nodes are not linked to themselves (the node degree of an isolated node, i.e. a node that has no links, is defined as zero).
 To sparsity: in their work, Hurley and Rickard compare different measures of sparsity~\cite{sparsity}, and rank different known sparsity measures according to six desirable criteria that a sparsity measure should trivially satisfy, among them: the Robin Hood axiom ("stealing from the rich and giving to the poor", or in the context of distributed networking: website hosting over multiple providers instead of a single provider should reduce sparsity); the Scaling axiom (sparsity is scale-invariant); and the Rising Tide axiom (sparsity is decreased by adding a constant to all coefficients).
 Hurley et al. prove that amongst the most common methods to measure sparsity, the Gini coefficient outperformed all other measurements, and satisfies all six criteria.
 The Gini coefficient, a metric commonly associated with the Human Development Index to measure income inequality around the world, is calculated as follows:
-$$
+\[
 G = \frac{\sum_{i=0}^n \sum_{j=0}^n |a_i - a_j|}{2n \sum_{i=0}^n a_i}
-$$
+\]
 Where $a_i$ is the amount of resources of node $i$, and $n$ is the total number of nodes. In this paper, $a_i$ is defined as the node degree of node $i$.
 Hurley and Rickard's work allows us to effectively use tried-and-tested economical metrics to measure the sparsity of the different simulation topologies.
+To conclude, this paper compares the aforementioned metrics with the trivial L0 norm, which is calculated from the different topologies' node degrees followingly:
+\[
+L_0 = \sum_{i=0}^n \begin{cases}
+  1 & \text{if $a_i > 0$} \\
+  0 & \text{otherwise}
+\end{cases}
+\]
+where $\mathbb{1}_{\{a_i > 0\}}$ is the indicator function that returns $1$ if the node degree of node $i$ is greater than 0, and $0$ otherwise.
 To summarise, this paper uses the Centralisation Score $\mathscr{S}$ and the Gini Coefficient $G$, and compares them with a basic metric, the L0 norm, to compare different topologies and rank them according to their centralization and sparsity metrics.
