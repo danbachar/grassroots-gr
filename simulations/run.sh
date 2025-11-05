@@ -10,7 +10,7 @@ DEFAULT_RANGES=(100)
 DEFAULT_START=1
 DEFAULT_MAXIMUM_NODE_DEGREES=(1 2 3 4 5 6 7 8 9 10)
 DEFAULT_MODE=1
-
+DEFAULT_RUN_RANDOMIZE_SEED=0
 print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
@@ -21,6 +21,7 @@ print_usage() {
     echo "  -r, --ranges RANGE...  Space-separated list of ranges (default: ${DEFAULT_RANGES[*]})"
     echo "  -s, --sizes SIZE...    Space-separated list of message sizes (default: ${DEFAULT_SIZES[*]})"
     echo "  -max-node-degrees NUM...   Space-separated list of maximum node degree (default: ${DEFAULT_MAXIMUM_NODE_DEGREES[*]})"
+    echo "  --randomize            If given, causes different runs to change the topology random seed (default: $DEFAULT_RUN_RANDOMIZE_SEED)"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "This script generates random stationary nodes for simulations."
@@ -71,6 +72,10 @@ while [[ $# -gt 0 ]]; do
                 shift
             done
             ;;
+        --randomize)
+            RUN_RANDOMIZE_SEED=1
+            shift
+            ;;
         -h|--help)
             print_usage
             exit 0
@@ -101,7 +106,7 @@ elif [[ "$MODE" != 0 && "$MODE" != 1 ]]; then
     exit 1
 fi
 START_RUN=${START_RUN:-$DEFAULT_START}
-
+RUN_RANDOMIZE_SEED=${RUN_RANDOMIZE_SEED:-$DEFAULT_RUN_RANDOMIZE_SEED}
 echo "Configuration:"
 echo "  Communication mode: $MODE"
 echo "  Maximum parallel jobs: $MAX_PARALLEL_JOBS"
@@ -111,6 +116,7 @@ echo "  Message sizes: [$(IFS=', '; echo "${SIZES[*]}")]"
 echo "  Interface ranges: [$(IFS=', '; echo "${RANGES[*]}")]"
 echo "  Scenario name: $SCENARIO_NAME"
 echo "  Max node degrees: [$(IFS=', '; echo "${MAX_NODE_DEGREES[*]}")]"
+echo "  Randomize seed per run: $RUN_RANDOMIZE_SEED"
 
 compile() {
     cd the-one
@@ -133,7 +139,7 @@ run_simulation() {
 
     cd the-one
     ./one.sh -b 1  \
-        "$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}.txt" \
+        "$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}-randomize${RUN_RANDOMIZE_SEED}.txt" \
         "$SCENARIO_NAME-comms-settings-mode${mode}-maxdeg${max_node_degree}.txt"
     cd -
     end_timestamp=$(date +%s)
@@ -162,12 +168,16 @@ prepare_config_files() {
             for size in "${SIZES[@]}"; do
                 for run in $(seq $START_RUN $NUM_RUNS); do
                     for range in "${RANGES[@]}"; do
-                        RANDOM_SEED=$((size+range*1000))
-                        sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_size${size}_run${run}_range${range}_mode${mode}_maxdeg${max_node_degree}/" \
+                        if [ "$RUN_RANDOMIZE_SEED" -eq 1 ]; then
+                            RANDOM_SEED=$((size+range*1000+run*10000))
+                        else
+                            RANDOM_SEED=$((size+range*1000))
+                        fi
+                        sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_size${size}_run${run}_range${range}_mode${mode}_maxdeg${max_node_degree}_randomize${RUN_RANDOMIZE_SEED}/" \
                             -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
                             -e "s/Events1.size = .*/Events1.size = $size/" \
                             -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
-                            the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}.txt"
+                            the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}-randomize${RUN_RANDOMIZE_SEED}.txt"
                     done
                 done
             done
