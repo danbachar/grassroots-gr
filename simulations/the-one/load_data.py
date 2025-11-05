@@ -251,11 +251,48 @@ def parse_hl_lines_from_unified_report(unified_report_file: str) -> dict[str, Ho
                         
     return hosts
 
-def load_distance_delay_data(file_path: str, mode: int, delivered_messages: set[str], run: int = 0, scenario_name: str = "", message_size: int = 0, max_degree: int = 0) -> list[Message]:
+def parse_unified_report(unified_report_file: str) -> tuple[list[str], list[str], list[str], list[str]]:
     """
-    Load distance delay report data
+    Parse unified report and return lists of lines for each report type.
+    
     Args:
-        - file_path: Path to the distance delay report file
+        unified_report_file: Path to the unified report file
+        
+    Returns:
+        Tuple of (distance_lines, delivered_lines, connectivity_lines, eventlog_lines)
+    """
+    distance_lines = []
+    delivered_lines = []
+    connectivity_lines = []
+    eventlog_lines = []
+    
+    with open(unified_report_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or line.startswith('HL:'):
+                continue
+            
+            if ": " not in line:
+                continue
+            
+            report_identifier, line_content = line.split(": ", 1)
+            
+            if report_identifier == "DD":
+                distance_lines.append(line_content)
+            elif report_identifier == "DM":
+                delivered_lines.append(line_content)
+            elif report_identifier == "CO":
+                connectivity_lines.append(line_content)
+            elif report_identifier == "EL":
+                eventlog_lines.append(line_content)
+    
+    return distance_lines, delivered_lines, connectivity_lines, eventlog_lines
+
+def load_distance_delay_data_from_lines(lines: list[str], mode: int, delivered_messages: set[str], run: int = 0, scenario_name: str = "", message_size: int = 0, max_degree: int = 0) -> list[Message]:
+    """
+    Load distance delay report data from lines
+    Args:
+        - lines: List of distance delay report lines
         - mode: 0 for intra-cluster messages, 1 for inter-cluster messages
         - run: run number
         - scenario_name: scenario name prefix
@@ -264,48 +301,44 @@ def load_distance_delay_data(file_path: str, mode: int, delivered_messages: set[
     """
     messages: list[Message] = []
     
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith('#') or not line:
-                print(f"Skipped line: {line}")
-                continue
-            parts = line.split()
-            if len(parts) >= 4:
-                distance = float(parts[0])
-                delivery_time = float(parts[1])
-                hop_count = int(parts[2])
-                message_id = parts[3]
-                is_delivered = message_id in delivered_messages
-                msg = Message(message_id, distance=distance, hop_count=hop_count, delivery_time=delivery_time, is_delivered=is_delivered, mode=mode, run=run, scenario_name=scenario_name, message_size=message_size, max_degree=max_degree)
-                messages.append(msg)
-            else:
-                print("Cannot load distance delay delay of line due to missing 4 parts, have {} parts:", line, len(parts))
+    for line in lines:
+        line = line.strip()
+        if line.startswith('#') or not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 4:
+            distance = float(parts[0])
+            delivery_time = float(parts[1])
+            hop_count = int(parts[2])
+            message_id = parts[3]
+            is_delivered = message_id in delivered_messages
+            msg = Message(message_id, distance=distance, hop_count=hop_count, delivery_time=delivery_time, is_delivered=is_delivered, mode=mode, run=run, scenario_name=scenario_name, message_size=message_size, max_degree=max_degree)
+            messages.append(msg)
+        else:
+            print("Cannot load distance delay delay of line due to missing 4 parts, have {} parts:", line, len(parts))
     return messages
 
-def load_delivered_messages_data(file_path: str) -> list[DeliveredMessageDTO]:
+def load_delivered_messages_data_from_lines(lines: list[str]) -> list[DeliveredMessageDTO]:
     """
-    Load delivered messages report data
+    Load delivered messages report data from lines
     Format: time, ID, size, hopcount, deliveryTime, fromHost, toHost, remainingTtl, isResponse, path
 
     Returns: List of DeliveredMessageDTO
     """
     messages: list[DeliveredMessageDTO] = []
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith('#') or not line:
-                print(f"Skipped line: {line}")
-                continue
-            parts = line.split()
-            if len(parts) >= 3:
-                message_id = parts[1]
-                size = int(parts[2])
-                hops = parts[-1].split('->')
-                dto = DeliveredMessageDTO(message_id, hops, size)
-                messages.append(dto)
-            else:
-                print("Cannot load message delivery data line due to missing 3 parts, have {} parts:", line, len(parts))
+    for line in lines:
+        line = line.strip()
+        if line.startswith('#') or not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 3:
+            message_id = parts[1]
+            size = int(parts[2])
+            hops = parts[-1].split('->')
+            dto = DeliveredMessageDTO(message_id, hops, size)
+            messages.append(dto)
+        else:
+            print("Cannot load message delivery data line due to missing 3 parts, have {} parts:", line, len(parts))
     return messages
 
 def parse_message_transmission_line(line: str) -> None|TransmissionEvent:
@@ -347,12 +380,12 @@ def parse_message_transmission_line(line: str) -> None|TransmissionEvent:
         print(line)
         return None # TODO: handle drop?
 
-def parse_message_transmissions(event_log_file: str, delivered_messages: list[DeliveredMessageDTO], connectivity_by_time: dict[float, dict[str, dict[str, set[str]]]]) -> dict[str, Transmission]:
+def parse_message_transmissions_from_lines(event_log_lines: list[str], delivered_messages: list[DeliveredMessageDTO], connectivity_by_time: dict[float, dict[str, dict[str, set[str]]]]) -> dict[str, Transmission]:
     """
-    Parse EventLogReport to extract message transmission events.
+    Parse event log lines to extract message transmission events.
     
     Args:
-        - event_log_file: Path to EventLogReport.txt
+        - event_log_lines: List of event log lines
         - delivered_messages: delivered messages, along with the path they took to their destination
         - connectivity_by_time: dictionary representing connectivity state at timestamp per node
         
@@ -362,24 +395,24 @@ def parse_message_transmissions(event_log_file: str, delivered_messages: list[De
     transmissions: dict[str, Transmission] = {}
     transmissions_events_per_message: dict[str, list[TransmissionEvent]] = {} # store all events per message ID
     delivered_messages_by_id = {msg.id: msg for msg in delivered_messages}
-    with open(event_log_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#') or 'CONN' in line:
-                # skip lines not related to messages, or comments
-                continue
-            transmission_event = parse_message_transmission_line(line)
-            if transmission_event is None:
-                continue
+    
+    for line in event_log_lines:
+        line = line.strip()
+        if not line or line.startswith('#') or 'CONN' in line:
+            # skip lines not related to messages, or comments
+            continue
+        transmission_event = parse_message_transmission_line(line)
+        if transmission_event is None:
+            continue
 
-            # we only store transmission events that are part of the successful delivery of a message
-            if transmission_event.message_id in delivered_messages_by_id:
-                path = delivered_messages_by_id[transmission_event.message_id].hops
-                # either the created event, or for delivery the destination of this transmission is in the path
-                if (transmission_event.from_node in path and transmission_event.action == 'C') or transmission_event.to_node in path:
-                    if transmission_event.message_id not in transmissions_events_per_message:
-                        transmissions_events_per_message[transmission_event.message_id] = []
-                    transmissions_events_per_message[transmission_event.message_id].append(transmission_event)
+        # we only store transmission events that are part of the successful delivery of a message
+        if transmission_event.message_id in delivered_messages_by_id:
+            path = delivered_messages_by_id[transmission_event.message_id].hops
+            # either the created event, or for delivery the destination of this transmission is in the path
+            if (transmission_event.from_node in path and transmission_event.action == 'C') or transmission_event.to_node in path:
+                if transmission_event.message_id not in transmissions_events_per_message:
+                    transmissions_events_per_message[transmission_event.message_id] = []
+                transmissions_events_per_message[transmission_event.message_id].append(transmission_event)
     
     for message_id, events in transmissions_events_per_message.items():
         path = delivered_messages_by_id[message_id].hops
@@ -415,43 +448,42 @@ def parse_message_transmissions(event_log_file: str, delivered_messages: list[De
 
     return transmissions
 
-def parse_connectivity_report(connectivity_file: str) -> dict[float, dict[str, dict[str, set[str]]]]:
+def parse_connectivity_report_from_lines(connectivity_lines: list[str]) -> dict[float, dict[str, dict[str, set[str]]]]:
     """
-    Parse ConnectivityONEReport to build a time-indexed connectivity graph.
+    Parse connectivity lines to build a time-indexed connectivity graph.
     
     Args:
-        connectivity_file: Path to ConnectivityONEReport.txt
+        connectivity_lines: List of connectivity report lines
         
     Returns:
         Dictionary mapping timestamp -> node -> { up: up connection events to nodes, down: down connection event to nodes }
     """
     connectivity_by_time: dict[float, dict[str, dict[str, set[str]]]] = {}
     
-    with open(connectivity_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
+    for line in connectivity_lines:
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        
+        parts = line.split()
+        if len(parts) >= 5 and parts[1] == 'CONN':
+            timestamp = float(parts[0])
+            node1, node2 = parts[2], parts[3]
+            status = parts[4]  # 'up' or 'down'
             
-            parts = line.split()
-            if len(parts) >= 5 and parts[1] == 'CONN':
-                timestamp = float(parts[0])
-                node1, node2 = parts[2], parts[3]
-                status = parts[4]  # 'up' or 'down'
-                
-                if timestamp not in connectivity_by_time:
-                    timestamp_connectivity_state = {}
-                    timestamp_connectivity_state[node1] = {'up': set(), 'down': set()}
-                    timestamp_connectivity_state[node2] = {'up': set(), 'down': set()}
-                    connectivity_by_time[timestamp] = timestamp_connectivity_state
-                if node1 not in connectivity_by_time[timestamp]:
-                    connectivity_by_time[timestamp][node1] = {'up': set(), 'down': set()}
-                if node2 not in connectivity_by_time[timestamp]:
-                    connectivity_by_time[timestamp][node2] = {'up': set(), 'down': set()}
+            if timestamp not in connectivity_by_time:
+                timestamp_connectivity_state = {}
+                timestamp_connectivity_state[node1] = {'up': set(), 'down': set()}
+                timestamp_connectivity_state[node2] = {'up': set(), 'down': set()}
+                connectivity_by_time[timestamp] = timestamp_connectivity_state
+            if node1 not in connectivity_by_time[timestamp]:
+                connectivity_by_time[timestamp][node1] = {'up': set(), 'down': set()}
+            if node2 not in connectivity_by_time[timestamp]:
+                connectivity_by_time[timestamp][node2] = {'up': set(), 'down': set()}
 
-                connectivity_by_time[timestamp][node1][status].add(node2)
-                connectivity_by_time[timestamp][node2][status].add(node1)
-                    
+            connectivity_by_time[timestamp][node1][status].add(node2)
+            connectivity_by_time[timestamp][node2][status].add(node1)
+                
     
     return connectivity_by_time
 
@@ -509,12 +541,12 @@ def get_neighbors_at_time_for_node(connectivity_state: dict[float, dict[str, dic
     
     return neighbors
 
-def load_all_created_messages(event_log_file: str, message_size: int, communication_range: float, run: int = 0, scenario_name: str = "", max_degree: int = 0) -> list[Message]:
+def load_all_created_messages_from_lines(event_log_lines: list[str], message_size: int, communication_range: float, run: int = 0, scenario_name: str = "", max_degree: int = 0) -> list[Message]:
     """
-    Load all created messages from EventLogReport, including undelivered ones.
+    Load all created messages from event log lines, including undelivered ones.
     
     Args:
-        event_log_file: Path to EventLogReport.txt
+        event_log_lines: List of event log lines
         message_size: Size of messages for this simulation
         communication_range: Communication range for this simulation
         run: run number
@@ -526,30 +558,40 @@ def load_all_created_messages(event_log_file: str, message_size: int, communicat
     """
     created_messages: list[Message] = []
     
-    with open(event_log_file, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#') or 'CONN' in line:
-                continue
-                
-            parts = line.split()
-            if len(parts) >= 5 and parts[1] == 'C':  # Created message
-                timestamp = float(parts[0])
-                from_node = parts[2]
-                to_node = parts[3]
-                message_id = parts[4]
-                
-                # Create a basic message object for created messages
-                # We don't have distance/delivery info for undelivered messages
-                msg = Message(message_id, creation_time=timestamp, distance=0, size=message_size,
-                              communication_range=int(communication_range), delivery_time=0, hop_count=0,
-                              source=from_node, target=to_node, run=run, scenario_name=scenario_name, message_size=message_size, max_degree=max_degree)
+    for line in event_log_lines:
+        line = line.strip()
+        if not line or line.startswith('#') or 'CONN' in line:
+            continue
+            
+        parts = line.split()
+        if len(parts) >= 5 and parts[1] == 'C':  # Created message
+            timestamp = float(parts[0])
+            from_node = parts[2]
+            to_node = parts[3]
+            message_id = parts[4]
+            
+            # Create a basic message object for created messages
+            # We don't have distance/delivery info for undelivered messages
+            msg = Message(message_id, creation_time=timestamp, distance=0, size=message_size,
+                          communication_range=int(communication_range), delivery_time=0, hop_count=0,
+                          source=from_node, target=to_node, run=run, scenario_name=scenario_name, message_size=message_size, max_degree=max_degree)
 
-                created_messages.append(msg)
+            created_messages.append(msg)
     
     return created_messages
 
 def combine_run_message_data(config: Configuration, scenario_prefix: str, message_size: int) -> tuple[list[Message], list[Message], Topology]:
+    """
+    Load and combine message data for a single run configuration from unified report.
+    
+    Args:
+        config: Configuration object with run parameters
+        scenario_prefix: Scenario name prefix (e.g., "GR")
+        message_size: Message size in bytes
+        
+    Returns:
+        Tuple of (created_messages, delivered_messages, final_topology)
+    """
     messages: list[Message] = []
     delivered_messages: list[Message] = []
 
@@ -559,21 +601,25 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
     max_degree = config.max_degree
     randomize = config.run_randomize_seed
 
-    distance_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_DistanceDelayReport.txt"
-    delivered_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_DeliveredMessagesReport.txt"
-    connectivity_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_ConnectivityONEReport.txt"
-    eventlog_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_EventLogReport.txt"
     unified_report_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_UnifiedReport.txt"
 
+    # Parse unified report once to get all data
+    print(f"  Parsing unified report: {unified_report_file}")
     host_info = parse_hl_lines_from_unified_report(unified_report_file)
+    distance_lines, delivered_lines, connectivity_lines, eventlog_lines = parse_unified_report(unified_report_file)
+    
     node_ids = [h.host_id for h in host_info.values()]
     
-    delivered_message_dtos = load_delivered_messages_data(delivered_file)
+    # Load delivered messages first to know which messages succeeded
+    delivered_message_dtos = load_delivered_messages_data_from_lines(delivered_lines)
     delivered_message_ids = set(msg.id for msg in delivered_message_dtos)
-    distance_messages = load_distance_delay_data(distance_file, mode, delivered_message_ids, run, scenario_prefix, message_size, max_degree)
+    
+    # Load distance/delay data for delivered messages
+    distance_messages = load_distance_delay_data_from_lines(distance_lines, mode, delivered_message_ids, run, scenario_prefix, message_size, max_degree)
     distance_data = {msg.id: msg for msg in distance_messages}  # Create lookup by message ID
     
-    created_messages_run = load_all_created_messages(eventlog_file, message_size, float(range_suffix), run, scenario_prefix, max_degree)
+    # Load all created messages (including undelivered)
+    created_messages_run = load_all_created_messages_from_lines(eventlog_lines, message_size, float(range_suffix), run, scenario_prefix, max_degree)
     for msg in created_messages_run:
         if msg.id in distance_data:
             msg.distance = distance_data[msg.id].distance
@@ -588,10 +634,14 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
 
         messages.append(msg)    
 
-    transmissions_data = load_transmission_data(eventlog_file, connectivity_file, delivered_message_dtos)
-    connectivity_by_time = parse_connectivity_report(connectivity_file)
+    # Parse connectivity and build topology
+    connectivity_by_time = parse_connectivity_report_from_lines(connectivity_lines)
     final_topology = get_final_topology(node_ids, connectivity_by_time)
     
+    # Parse transmissions for delivered messages
+    transmissions_data = parse_message_transmissions_from_lines(eventlog_lines, delivered_message_dtos, connectivity_by_time)
+    
+    # Enrich delivered messages with full details
     for msg in distance_messages:
         if msg.id in delivered_message_ids:
             delivered_message = delivered_message_dtos[[m.id for m in delivered_message_dtos].index(msg.id)]
@@ -614,8 +664,9 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
             msg.max_degree = max_degree
             delivered_messages.append(msg)
     
+    # Add unique suffix to message IDs
     for msg in created_messages_run + delivered_messages:
-        msg.id = f"{msg.id}_run{run}_range{range_suffix}"
+        msg.id = f"{msg.id}_run{run}_range{range_suffix}_maxdeg{max_degree}_mode{mode}_randomize{randomize}"
     
     return created_messages_run, delivered_messages, final_topology
 
@@ -652,21 +703,6 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
         msg.is_delivered = msg.id in delivered_message_ids
     
     return all_messages, delivered_messages, all_topologies
-
-def load_transmission_data(event_log_file: str, connectivity_file: str, delivered_messages_with_hops: list[DeliveredMessageDTO]) -> dict[str, Transmission]:
-    """
-    Calculate peer density and latency for each transmitting node at the time of message transmission.
-    
-    Args:
-        - event_log_file: Path to EventLogReport.txt
-        - connectivity_file: Path to ConnectivityONEReport.txt
-        - delivered_messages_with_hops: list of DeliveredMessageDTO
-    Returns:
-        Dict of message ID to transmission
-    """
-    connectivity_by_time = parse_connectivity_report(connectivity_file)
-    
-    return parse_message_transmissions(event_log_file, delivered_messages_with_hops, connectivity_by_time)
 
 def split_unified_report_to_report_paths(unified_report_file_path: str, distance_file_path: str, delivered_file_path: str, connectivity_file_path: str, eventlog_file_path: str, hl_file_path: str):
     # report identifiers can be:
@@ -751,10 +787,7 @@ def main():
     randomize: int = args.randomize
     print(f"Received ranges {ranges}, runs {runs}, message size {message_size}, max degrees {max_degrees}, randomize {randomize}")
 
-    print("Splitting unified report data to individual reports...")
-    split_unified_report(scenario_prefix, ranges, runs, message_size, max_degrees, randomize)
-    
-    print("Combining all message data (including undelivered)...")
+    print("Combining all message data directly from unified reports (including undelivered)...")
     all_messages, delivered_messages, topologies = combine_all_message_data(scenario_prefix, ranges, runs, message_size, max_degrees, randomize)
     print("All message data combined!")
 
