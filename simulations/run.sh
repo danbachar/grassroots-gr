@@ -209,7 +209,7 @@ run_simulations() {
                     done
                 done
             done
-        # done
+        done
     done
 
     echo "Waiting for all simulations to complete..."
