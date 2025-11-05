@@ -32,9 +32,9 @@ class Topology:
     def get_number_of_links(self) -> int:
         count = 0
         links_counted: dict[str, set[str]] = {}
-        for node, neighbors in self.connections.items():
+        for n1, neighbors in self.connections.items():
             for neighbor in neighbors:
-                source, target = tuple(sorted([node, neighbor]))
+                source, target = tuple(sorted([n1, neighbor]))
                 neighbours = links_counted.get(source)
                 if neighbours is None:
                     links_counted[source] = set([target])
@@ -44,27 +44,40 @@ class Topology:
                         count += 1
                         links_counted[source].add(target)
         return count
+    
+    def __str__(self) -> str:
+        sorted_nodes = sorted(list(map(lambda x: int(x), self.connections.keys())))
+        result = "Topology:\n["
+        for n1 in sorted_nodes:
+            result += "["
+            for n2 in sorted_nodes:
+                result += "0," if str(n2) not in self.connections[str(n1)] else "1,"
+            result += "]\n"
+        result += "]"
+        return result
 
 class Configuration:
-    def __init__(self, run_number: int, range: int, max_degree: int, mode: int) -> None:
+    def __init__(self, run_number: int, range: int, max_degree: int, mode: int, run_randomize_seed: int) -> None:
         self.run_number = run_number
         self.range = range
         self.max_degree = max_degree
         self.mode = mode
+        self.run_randomize_seed = run_randomize_seed
 
     def __str__(self) -> str:
-        return f"Configuration(run={self.run_number}, range={self.range}, max_degree={self.max_degree}, mode={'intra' if self.mode == 0 else 'inter'})"
-    
+        return f"Configuration(run={self.run_number}, range={self.range}, max_degree={self.max_degree}, mode={'intra' if self.mode == 0 else 'inter'}, randomize_seed={self.run_randomize_seed})"
+
     def __eq__(self, other) -> bool:
         if not isinstance(other, Configuration):
             return False
         return (self.run_number == other.run_number and 
                 self.range == other.range and 
                 self.max_degree == other.max_degree and 
-                self.mode == other.mode)
-    
+                self.mode == other.mode and
+                self.run_randomize_seed == other.run_randomize_seed)
+
     def __hash__(self) -> int:
-        return hash((self.run_number, self.range, self.max_degree, self.mode))
+        return hash((self.run_number, self.range, self.max_degree, self.mode, self.run_randomize_seed))
 class HostInfo:
     def __init__(self, host_id: str, x: float, y: float) -> None:
         self.host_id = host_id
@@ -470,7 +483,7 @@ def get_neighbors_at_time_for_node(connectivity_state: dict[float, dict[str, dic
                            target_time: float, node_name: str) -> set[str]:
     """
     Get the connectivity state at a specific time (or closest available time) for a specific node.
-    
+
     Args:
         connectivity_state: Complete connectivity state by timestamp, node, and status
         target_time: The time to query
@@ -544,12 +557,13 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
     range_suffix = str(config.range)
     mode = config.mode
     max_degree = config.max_degree
+    randomize = config.run_randomize_seed
 
-    distance_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_DistanceDelayReport.txt"
-    delivered_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_DeliveredMessagesReport.txt"
-    connectivity_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_ConnectivityONEReport.txt"
-    eventlog_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_EventLogReport.txt"
-    unified_report_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_UnifiedReport.txt"
+    distance_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_DistanceDelayReport.txt"
+    delivered_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_DeliveredMessagesReport.txt"
+    connectivity_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_ConnectivityONEReport.txt"
+    eventlog_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_EventLogReport.txt"
+    unified_report_file = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_UnifiedReport.txt"
 
     host_info = parse_hl_lines_from_unified_report(unified_report_file)
     node_ids = [h.host_id for h in host_info.values()]
@@ -605,7 +619,7 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
     
     return created_messages_run, delivered_messages, final_topology
 
-def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs: int, message_size: int, max_degrees: list[int]) -> tuple[list[Message], list[Message], dict[Configuration, Topology]]:
+def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs: int, message_size: int, max_degrees: list[int], run_randomize_seed: int) -> tuple[list[Message], list[Message], dict[Configuration, Topology]]:
     """
     Combine data to get all messages, as well as delivered messages, and topologies.
 
@@ -625,7 +639,7 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
                 
                 for run in range(1, num_runs + 1):
                     print(f" Processing run {run}/{num_runs}...")
-                    config = Configuration(run, range_suffix, max_degree, mode)
+                    config = Configuration(run, range_suffix, max_degree, mode, run_randomize_seed)
                     created_messages_run, delivered_messages_run, topology = combine_run_message_data(config, scenario_prefix, message_size)
                     
                     all_messages.extend(created_messages_run)
@@ -702,17 +716,17 @@ def split_unified_report_to_report_paths(unified_report_file_path: str, distance
         if hl_file:
             hl_file.close()
 
-def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, message_size: int, max_degrees: list[int]):
+def split_unified_report(scenario_prefix: str, ranges: list[int], runs: int, message_size: int, max_degrees: list[int], randomize: int):
     for max_degree in max_degrees:
         for range_suffix in ranges:
             for run in range(1, runs + 1):
                 for mode in [0,1]: # 0 for intra, 1 for inter
-                    distance_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_DistanceDelayReport.txt"
-                    delivered_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_DeliveredMessagesReport.txt"
-                    connectivity_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_ConnectivityONEReport.txt"
-                    eventlog_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_EventLogReport.txt"
-                    hl_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_HostLocationReport.txt"
-                    unified_report_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_UnifiedReport.txt"
+                    distance_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_DistanceDelayReport.txt"
+                    delivered_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_DeliveredMessagesReport.txt"
+                    connectivity_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_ConnectivityONEReport.txt"
+                    eventlog_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_EventLogReport.txt"
+                    hl_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_HostLocationReport.txt"
+                    unified_report_file_path = f"reports_data/{scenario_prefix}_size{message_size}_run{run}_range{range_suffix}_mode{mode}_maxdeg{max_degree}_randomize{randomize}_UnifiedReport.txt"
                     split_unified_report_to_report_paths(unified_report_file_path, distance_file_path, delivered_file_path, connectivity_file_path, eventlog_file_path, hl_file_path)
 def main():
     DEFAULT_RANGES = [1, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
@@ -726,6 +740,7 @@ def main():
     parser.add_argument("--scenario-name", type=str, default="GR", help="Scenario name to process for the reports " + str(DEFAULT_SCENARIO_NAME))
     parser.add_argument("--message-size", type=int, default=DEFAULT_MESSAGE_SIZE, help="Message size used in the simulation filenames. Default is " + str(DEFAULT_MESSAGE_SIZE))
     parser.add_argument("--max-degrees", type=int, nargs="+", default=[1,2,3,4,5,6,7,8,9,10], help="List of max node degrees to process")
+    parser.add_argument("--randomize", type=int, default=0, help="If set to 1, causes different runs to change the topology random number generator seed. Default is 0 (no randomization).")
 
     args = parser.parse_args()
     ranges: list[int] = args.ranges
@@ -733,14 +748,14 @@ def main():
     scenario_prefix: str = args.scenario_name
     message_size: int = args.message_size
     max_degrees: list[int] = args.max_degrees
-
-    print(f"Received ranges {ranges}, runs {runs}, and message size {message_size}")
+    randomize: int = args.randomize
+    print(f"Received ranges {ranges}, runs {runs}, message size {message_size}, max degrees {max_degrees}, randomize {randomize}")
 
     print("Splitting unified report data to individual reports...")
-    split_unified_report(scenario_prefix, ranges, runs, message_size, max_degrees)
+    split_unified_report(scenario_prefix, ranges, runs, message_size, max_degrees, randomize)
     
     print("Combining all message data (including undelivered)...")
-    all_messages, delivered_messages, topologies = combine_all_message_data(scenario_prefix, ranges, runs, message_size, max_degrees)
+    all_messages, delivered_messages, topologies = combine_all_message_data(scenario_prefix, ranges, runs, message_size, max_degrees, randomize)
     print("All message data combined!")
     
     with open("all_messages.pkl", "wb") as f:

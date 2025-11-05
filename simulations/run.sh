@@ -21,7 +21,7 @@ print_usage() {
     echo "  -r, --ranges RANGE...  Space-separated list of ranges (default: ${DEFAULT_RANGES[*]})"
     echo "  -s, --sizes SIZE...    Space-separated list of message sizes (default: ${DEFAULT_SIZES[*]})"
     echo "  -max-node-degrees NUM...   Space-separated list of maximum node degree (default: ${DEFAULT_MAXIMUM_NODE_DEGREES[*]})"
-    echo "  --randomize            If given, causes different runs to change the topology random seed (default: $DEFAULT_RUN_RANDOMIZE_SEED)"
+    echo "  --randomize            If set to 1, causes different runs to change the topology random number generator seed (default: $DEFAULT_RUN_RANDOMIZE_SEED)"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "This script generates random stationary nodes for simulations."
