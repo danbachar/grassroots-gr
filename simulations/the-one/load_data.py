@@ -757,17 +757,20 @@ def main():
     print("Combining all message data (including undelivered)...")
     all_messages, delivered_messages, topologies = combine_all_message_data(scenario_prefix, ranges, runs, message_size, max_degrees, randomize)
     print("All message data combined!")
-    
-    with open("all_messages.pkl", "wb") as f:
+
+    all_messages_path = f"all_messages_randomized{randomize}.pkl"
+    with open(all_messages_path, "wb") as f:
         dump(all_messages, f)
-        
-    with open("delivered_messages.pkl", "wb") as f:
+
+    delivered_messages_path = f"delivered_messages_randomized{randomize}.pkl"
+    with open(delivered_messages_path, "wb") as f:
         dump(delivered_messages, f)
-    
-    with open("topologies.pkl", "wb") as f:
+
+    topologies_path = f"topologies_randomized{randomize}.pkl"
+    with open(topologies_path, "wb") as f:
         dump(topologies, f)
-    
-    print("Data saved to pickle files: all_messages.pkl, delivered_messages.pkl, topologies.pkl")
+
+    print(f"Data saved to pickle files: {all_messages_path}, {delivered_messages_path}, {topologies_path}")
 
 if __name__ == "__main__":
     main()

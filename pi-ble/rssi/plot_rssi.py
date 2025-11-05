@@ -130,7 +130,7 @@ def plot_density(distance_rssi_data: dict[float, list[float]], output_dir: str, 
     
     n_rows = int(np.ceil(n_plots / n_cols))
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows), squeeze=False)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), squeeze=False)
     axes = axes.flatten()  # Flatten the 2D array of axes to easily iterate
     
     for i, distance in enumerate(distances_with_data):
@@ -155,9 +155,9 @@ def plot_density(distance_rssi_data: dict[float, list[float]], output_dir: str, 
         axes[i].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig(f'{output_dir}/rssi_density_subplots.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'{output_dir}/rssi_density.png', dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved density subplots to {output_dir}/rssi_density_subplots.png")
+    print(f"Saved density plot to {output_dir}/rssi_density.png")
 
 def plot_cdf(distance_rssi_data: dict[float, list[float]], output_dir: str):
     """Plot CDF of RSSI values for each distance"""
@@ -346,7 +346,7 @@ def plot_advertisements_per_distance(distance_rssi_data: dict[float, list[float]
     """
     Plot advertisement delivery success probability vs. distance using two different calculation methods.
     """
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 16))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 8))
 
     # --- Subplot 1: Success probability relative to advertisements received at 0.0m ---
     if 0.0 not in distance_rssi_data or not distance_rssi_data[0.0]:
@@ -383,10 +383,9 @@ def plot_advertisements_per_distance(distance_rssi_data: dict[float, list[float]
                 counts1.append(received_count)
                 std_devs1.append(float(np.std(run_probs) if run_probs else 0.0))
         
-        x_pos1 = np.arange(len(distances1))
-        ax1.bar(x_pos1, probabilities1, color='skyblue', edgecolor='black', alpha=0.7,
-                yerr=std_devs1, capsize=5, error_kw={'elinewidth': 2, 'capthick': 2})
-        ax1.set_xlabel('Distance (meters)')
+        x_pos1 = np.arange(len(distances1)) * 1.3
+        ax1.bar(x_pos1, probabilities1, width=0.8, color='skyblue', edgecolor='black', alpha=0.7,
+                yerr=std_devs1, capsize=5, error_kw={'elinewidth': 1, 'capthick': 1})
         ax1.set_ylabel('Success Probability')
         ax1.set_title('Ad Delivery Success Rate (Based on Ads received at 0m)')
         ax1.grid(True, alpha=0.3, axis='y')
@@ -435,9 +434,9 @@ def plot_advertisements_per_distance(distance_rssi_data: dict[float, list[float]
                     counts2.append(received_count)
                     std_devs2.append(float(np.std(run_probs) if run_probs else 0.0))
 
-            x_pos2 = np.arange(len(distances2))
-            ax2.bar(x_pos2, probabilities2, color='lightgreen', edgecolor='black', alpha=0.7,
-                    yerr=std_devs2, capsize=5, error_kw={'elinewidth': 2, 'capthick': 2})
+            x_pos2 = np.arange(len(distances2)) * 1.3
+            ax2.bar(x_pos2, probabilities2, width=0.8, color='green', edgecolor='black', alpha=0.7,
+                    yerr=std_devs2, capsize=5, error_kw={'elinewidth': 1, 'capthick': 1})
             ax2.set_xlabel('Distance (meters)')
             ax2.set_ylabel('Success Probability')
             ax2.set_title('Ad Delivery Success Rate (Based on 25ms Ad Interval)')
