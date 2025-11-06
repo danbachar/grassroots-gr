@@ -218,87 +218,6 @@ def load_messages_per_run(all_messages: list[Message], delivered_messages: list[
 
     return all_messages_per_config, delivered_messages_per_config
 
-def plot_latency_cdf(delivered_messages):
-    """Plot CDF of delivered message latencies"""
-    # Increase figure height to accommodate labels
-    fig, ax = plt.subplots(figsize=(12, 10))
-    
-    ranges = sorted(np.unique([msg.communication_range for msg in delivered_messages]), key=int)
-    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
-    
-    special_percentiles = [50, 99.9, 99.99, 99.999, 99.9999]
-    plotting_percentiles = [0] + special_percentiles
-    percentile_stats = {}
-    
-    tick_positions = np.arange(len(special_percentiles))
-    all_positions = np.arange(-1, len(special_percentiles))
-    
-    for i, comm_range in enumerate(ranges):
-        messages_for_range = list(filter(lambda msg, r_inner=float(comm_range): 
-                                      msg.communication_range == r_inner and msg.delivery_time > 0, 
-                                      delivered_messages))
-        
-        latencies = sorted([msg.delivery_time for msg in messages_for_range])
-        
-        # Skip this range if no messages were delivered (empty latencies array)
-        if not latencies:
-            print(f"Warning: No delivered messages found for communication range {int(comm_range)}m - skipping this range in latency plot")
-            continue
-            
-        percentiles = np.arange(1, len(latencies) + 1) / len(latencies) * 100
-        
-        plot_positions = []
-        plot_latencies = []
-        
-        for j, p in enumerate(plotting_percentiles):
-            if p == 0:
-                # 0th percentile is the minimum latency
-                latency_at_percentile = latencies[0]
-                position = all_positions[j]  # -1
-            else:
-                latency_at_percentile = np.interp(p, percentiles, latencies)
-                position = all_positions[j]
-                
-            plot_positions.append(position)
-            plot_latencies.append(latency_at_percentile)
-        
-        ax.plot(plot_positions, plot_latencies, 
-                label=f'{int(comm_range)}m range', 
-                color=colors[i],
-                linewidth=2.5,
-                marker='o',
-                markersize=4)
-        
-        percentile_stats[comm_range] = {
-            p: np.interp(p, percentiles, latencies) 
-            for p in special_percentiles
-        }
-
-    # Set x-axis limits to show from 0% position to highest percentile with margin
-    ax.set_xlim(-1.2, len(special_percentiles) - 0.5)
-    
-    xticks = tick_positions 
-    xticklabels = ['50%', '99.9%', '99.99%', '99.999%', '99.9999%']
-    
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(xticklabels)    
-    ax.set_xlabel('Percentile (%)', fontsize=12)
-    ax.set_ylabel('Latency (seconds)', fontsize=12)
-    ax.set_title('Latency Percentile Distribution', fontsize=14, pad=20)
-    
-    ax.legend(loc='upper left', 
-             fontsize=10, 
-             framealpha=0.9,
-             title='Communication Ranges')
-    ax.set_yscale('log')
-    
-    # Adjust layout with more space for labels
-    plt.subplots_adjust(left=0.15)  # Increase left margin
-    path=f'figures/latency_percentiles.png'
-    plt.savefig(path,
-                bbox_inches='tight', dpi=300)
-    print(f"Saved latency percentile plot to {path}")
-    plt.close()
 def plot_max_degree_vs_throughput(delivered_messages: list[Message]):
     """Plot maximum allowed node degree vs achieved throughput, with one curve per communication radius: """
     
@@ -970,6 +889,7 @@ def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: di
         plt.savefig(f'figures/centralization_metrics_vs_max_degree_inter_{filename_suffix}.png', 
                     dpi=300, bbox_inches='tight')
         plt.close()
+        # GOOD PLOT
     
     plot_for_distance_range(low_ranges, "Low Distances: ≤40m", "low_dist", use_log_gini=False)
     plot_for_distance_range(high_ranges, "High Distances: 50-100m", "high_dist", use_log_gini=False)
@@ -1941,20 +1861,21 @@ def plot_delivery_success_matrices(all_messages: list[Message], delivered_messag
                 mode_name = "intra" if mode == 0 else "inter"
                 mode_name_title = "Intra-cluster" if mode == 0 else "Inter-cluster"
                 
-                # Create figure with 1 row × N columns (N = number of thresholds)
+                # Create figure with N rows × 1 column (vertical layout)
                 n_thresholds = len(time_thresholds)
-                fig_width = 8 * n_thresholds  # 8 inches per threshold column
-                fig, axes = plt.subplots(1, n_thresholds, figsize=(fig_width, 8), 
-                                        constrained_layout=True)
+                fig_height = 3.5 * n_thresholds  # 3.5 inches per threshold row (matches centralization plots)
                 
-                # Make axes iterable even if there's only one threshold
-                if n_thresholds == 1:
-                    axes = [axes]
+                # Use gridspec to have more control over layout
+                fig = plt.figure(figsize=(5, fig_height), constrained_layout=True)
+                gs = fig.add_gridspec(n_thresholds, 2, width_ratios=[20, 1], wspace=0.15)
+                
+                # Create axes for matrices (left column)
+                axes = [fig.add_subplot(gs[i, 0]) for i in range(n_thresholds)]
                 
                 # Store the image for later colorbar creation
                 im_for_colorbar = None
                 
-                # Plot each threshold as a column
+                # Plot each threshold as a row
                 for threshold_idx, time_threshold in enumerate(time_thresholds):
                     ax = axes[threshold_idx]
                     
@@ -1966,7 +1887,7 @@ def plot_delivery_success_matrices(all_messages: list[Message], delivered_messag
                         print(f"  No messages found for {mode_name} mode")
                         # Mark axes as empty
                         ax.text(0.5, 0.5, f'No data for {mode_name}-cluster', 
-                               ha='center', va='center', transform=ax.transAxes, fontsize=14)
+                               ha='center', va='center', transform=ax.transAxes, fontsize=16)
                         ax.set_xticks([])
                         ax.set_yticks([])
                         continue
@@ -1989,29 +1910,30 @@ def plot_delivery_success_matrices(all_messages: list[Message], delivered_messag
                     
                     # Set title with threshold
                     ax.set_title(f'Threshold: {int(time_threshold)}s, delivery rate: {delivery_rate:.1f}%', 
-                               fontsize=12)
+                               fontsize=12, pad=10)
                     
-                    # Only show y-label on leftmost column
-                    if threshold_idx == 0:
-                        ax.set_ylabel('Host Index', fontsize=10)
+                    # Y-label on all rows
+                    ax.set_ylabel('Host Index', fontsize=12)
                     
-                    # Always show x-label
-                    ax.set_xlabel('Host Index', fontsize=10)
+                    # X-label only on bottom row
+                    if threshold_idx == n_thresholds - 1:
+                        ax.set_xlabel('Host Index', fontsize=12)
                     
                     # Set equal aspect ratio to ensure square matrices
                     ax.set_aspect('equal', adjustable='box')
                     
+                    # Tick label size
+                    ax.tick_params(axis='both', which='major', labelsize=12)
+                    
                     print(f"    {mode_name.title()}-cluster, threshold {int(time_threshold)}s: {n_delivered:,}/{n_messages:,} ({delivery_rate:.1f}%)")
                 
-                # Add a single colorbar on the rightmost subplot
+                # Add a single colorbar in the right column, spanning all rows
                 if im_for_colorbar is not None:
-                    # Attach colorbar only to the rightmost axes
-                    rightmost_ax = axes[-1] if n_thresholds > 1 else axes[0]
-                    fig.colorbar(im_for_colorbar, ax=rightmost_ax, 
-                                label='Delivery Probability', fraction=0.046, pad=0.04)
-                
-                # Don't call tight_layout when using constrained_layout
-                # plt.tight_layout() is replaced by constrained_layout=True in subplots
+                    # Create colorbar axis on the right side
+                    cbar_ax = fig.add_subplot(gs[:, 1])
+                    cbar = fig.colorbar(im_for_colorbar, cax=cbar_ax, label='Delivery Probability')
+                    cbar.ax.tick_params(labelsize=12)
+                    cbar.set_label('Delivery Probability', fontsize=12)
                 
                 plot_filename = f"{plots_dir}/range{int(comm_range)}_maxdeg{max_deg}_{mode_name}_thresholds_{threshold_str}.png"
                 plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
@@ -2146,72 +2068,16 @@ def plot_delivery_success_matrices_comparison(all_messages: list[Message], deliv
             
             print(f"  Saved: {plot_filename}")
 
-def debug_topology_metrics(topologies: dict[Configuration, Topology]):
-    """
-    Debug function to print detailed topology statistics for each configuration.
-    """
-    TOTAL_NODES = 72
-    
-    # Get all configurations
-    configs = sorted(topologies.keys(), key=lambda c: (c.mode, c.range, c.max_degree))
-    
-    print("\n" + "="*100)
-    print("TOPOLOGY DEBUG INFORMATION")
-    print("="*100)
-    
-    for config in configs:
-        if config.range == 100 and config.mode == 1 and config.run_randomize_seed == 1:
-            topology = topologies[config]
-            
-            # Calculate all metrics
-            degrees_list = []
-            for node_id in range(TOTAL_NODES):
-                node_name = str(node_id)
-                if node_name in topology.connections:
-                    degrees_list.append(len(topology.connections[node_name]))
-                else:
-                    degrees_list.append(0)
-            
-            # Basic stats
-            num_links = topology.get_number_of_links()
-            avg_degree = np.mean(degrees_list)
-            max_degree_actual = max(degrees_list)
-            min_degree = min(degrees_list)
-            
-            # Metrics
-            gini = calculate_gini_coefficient(degrees_list)
-            s_score = calculate_centralization_score(degrees_list, num_links)
-            l0_norm = calculate_l0_norm(degrees_list)
-            
-            # Count nodes by degree
-            degree_counts = {}
-            for d in degrees_list:
-                degree_counts[d] = degree_counts.get(d, 0) + 1
-            
-            mode_name = "INTRA" if config.mode == 0 else "INTER"
-            print(f"\n{mode_name}-cluster | Range: {config.range}m | Max Degree: {config.max_degree} | Run: {config.run_number}")
-            print(f"  Links: {num_links} | Avg Degree: {avg_degree:.2f} | Max Degree (actual): {max_degree_actual} | Min: {min_degree}")
-            print(f"  Gini: {gini:.4f} | S-score: {s_score:.6f} | L0: {l0_norm:.4f}")
-            print(f"  Degree distribution: {dict(sorted(degree_counts.items()))}")
-            print(f'  Degrees list:')
-            print(degrees_list)
-            
-            # Check if max_degree constraint is being violated
-            if max_degree_actual > config.max_degree:
-                print(f"  ⚠️  WARNING: Actual max degree ({max_degree_actual}) exceeds configured max ({config.max_degree})!")
-    
-    print("\n" + "="*100)
-
 def main():
     print("Loading message data from pickle files...")
 
-    # randomized_all_messages_path = f"all_messages_randomized1.pkl"
-    # with open(randomized_all_messages_path, 'rb') as f:
-    #     randomized_all_messages: list[Message] = pickle.load(f)
+    randomized_all_messages_path = f"all_messages_randomized1.pkl"
+    with open(randomized_all_messages_path, 'rb') as f:
+        randomized_all_messages: list[Message] = pickle.load(f)
 
-    # randomized_delivered_messages_path = f"delivered_messages_randomized1.pkl"
-    # with open(randomized_delivered_messages_path, 'rb') as f:
-    #     randomized_delivered_messages: list[Message] = pickle.load(f)
+    randomized_delivered_messages_path = f"delivered_messages_randomized1.pkl"
+    with open(randomized_delivered_messages_path, 'rb') as f:
+        randomized_delivered_messages: list[Message] = pickle.load(f)
 
     nonrandomized_all_messages_path = f"all_messages_randomized0.pkl"
     with open(nonrandomized_all_messages_path, 'rb') as f:
@@ -2222,42 +2088,37 @@ def main():
         nonrandomized_delivered_messages: list[Message] = pickle.load(f)
 
 
-    # with open(f"topologies_randomized1.pkl", 'rb') as f:
-    #     randomized_topologies: dict[Configuration, Topology] = pickle.load(f)
+    with open(f"topologies_randomized1.pkl", 'rb') as f:
+        randomized_topologies: dict[Configuration, Topology] = pickle.load(f)
     with open("topologies_randomized0.pkl", 'rb') as f:
         nonrandomized_topologies: dict[Configuration, Topology] = pickle.load(f)
 
-    # print("Generating simple analysis plots...")
-    # plot_latency_cdf(randomized_delivered_messages)
-    # plot_message_delivery_distribution(nonrandomized_all_messages, nonrandomized_delivered_messages)
+    print("Generating simple analysis plots...")
+    plot_message_delivery_distribution(nonrandomized_all_messages, nonrandomized_delivered_messages)
 
-    # print("Generating max degree vs. throughput analysis plots...")
-    # plot_max_degree_vs_throughput(randomized_delivered_messages)
-    # plot_max_degree_vs_throughput_run_comparison(randomized_delivered_messages)
+    print("Generating max degree vs. throughput analysis plots...")
+    plot_max_degree_vs_throughput(randomized_delivered_messages)
+    plot_max_degree_vs_throughput_run_comparison(randomized_delivered_messages)
 
-    # print("Generating max degree vs. centralization metrics plots...")
-    # plot_metrics_vs_max_degree(randomized_delivered_messages, randomized_topologies)
+    print("Generating max degree vs. centralization metrics plots...")
+    plot_metrics_vs_max_degree(randomized_delivered_messages, randomized_topologies)
 
-    # print("Generating latency vs. max degree plots...")
-    # plot_latency_vs_max_degree(randomized_delivered_messages, randomized_topologies)
+    print("Generating latency vs. max degree plots...")
+    plot_latency_vs_max_degree(randomized_delivered_messages, randomized_topologies)
 
-    # print("Generating latency vs. centralization metrics plots...")
-    # plot_latency_vs_centralization(randomized_delivered_messages, randomized_topologies)
+    print("Generating latency vs. centralization metrics plots...")
+    plot_latency_vs_centralization(randomized_delivered_messages, randomized_topologies)
 
-    # print("Generating centralization vs. delivery probability plots...")
-    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=float('inf'))  # All deliveries
-    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=10.0)
-    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=240.0)
+    print("Generating centralization vs. delivery probability plots...")
+    plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=float('inf'))  # All deliveries
+    plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=10.0)
+    plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=240.0)
 
-    # print("Generating topology and distance matrix plots...")
-    # plot_topology_and_distance_matrices(nonrandomized_all_messages, nonrandomized_topologies)
+    print("Generating topology and distance matrix plots...")
+    plot_topology_and_distance_matrices(nonrandomized_all_messages, nonrandomized_topologies)
 
     print("Generating delivery success probability plots...")
     plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, 10.0, 60.0)
-
-    # plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, time_threshold=10.0)
-    # plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, time_threshold=60.0)
-    # plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, time_threshold=240.0)
 
     print("\nAll plots generated successfully!")
 
