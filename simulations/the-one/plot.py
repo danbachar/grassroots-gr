@@ -1017,7 +1017,7 @@ def plot_message_delivery_distribution(all_messages: list[Message], delivered_me
     The total height (bar + shaded area) represents all generated messages.
     """
     # Create a figure with 2 subplots vertically
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7, 6))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6))
     
     # Subplot 1: Intra-cluster message distribution
     all_intra_messages = [msg for msg in all_messages if msg.distance > 0 and msg.mode == 0]
@@ -1069,7 +1069,7 @@ def plot_message_delivery_distribution(all_messages: list[Message], delivered_me
                         ha='center', va='bottom', fontsize=8)
         
         intra_delivery_rate = (len(delivered_intra_distances) / len(all_intra_distances) * 100) if all_intra_distances else 0
-        ax1.set_title('Intra-cluster message distribution', fontsize=12, color='black')
+        ax1.set_title('Intra-cluster', fontsize=12, color='black')
         ax1.legend(loc='upper right', fontsize=8)
         # ax1.text(0.02, 0.02, f'Total: {len(all_intra_distances):,}\nDelivered: {len(delivered_intra_distances):,} ({intra_delivery_rate:.1f}%)',
         #         transform=ax1.transAxes,
@@ -1082,7 +1082,7 @@ def plot_message_delivery_distribution(all_messages: list[Message], delivered_me
                 transform=ax1.transAxes,
                 ha='center', va='center',
                 fontsize=12)
-        ax1.set_title('Intra-cluster message distribution', fontsize=12, color='black')
+        ax1.set_title('Intra-cluster', fontsize=12, color='black')
     
     ax1.set_ylabel('Number of Messages', fontsize=10)
     ax1.grid(True, alpha=0.3, axis='y')
@@ -1139,7 +1139,7 @@ def plot_message_delivery_distribution(all_messages: list[Message], delivered_me
                         ha='center', va='bottom', fontsize=8)
         
         inter_delivery_rate = (len(delivered_inter_distances) / len(all_inter_distances) * 100) if all_inter_distances else 0
-        ax2.set_title('Inter-cluster message distribution', fontsize=12, color='black')
+        ax2.set_title('Inter-cluster', fontsize=12, color='black')
         ax2.legend(loc='upper right', fontsize=8)
         # ax2.text(0.02, 0.02, f'Total: {len(all_inter_distances):,}\nDelivered: {len(delivered_inter_distances):,} ({inter_delivery_rate:.1f}%)',
         #         transform=ax2.transAxes,
@@ -1152,7 +1152,7 @@ def plot_message_delivery_distribution(all_messages: list[Message], delivered_me
                 transform=ax2.transAxes,
                 ha='center', va='center',
                 fontsize=12)
-        ax2.set_title('Inter-cluster message distribution', fontsize=12, color='black')
+        ax2.set_title('Inter-cluster', fontsize=12, color='black')
     
     ax2.set_xlabel('Distance (m)', fontsize=10)
     ax2.set_ylabel('Number of Messages', fontsize=10)
@@ -2111,7 +2111,7 @@ def main():
     plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=10.0)
     plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=240.0)
 
-    print("Generating topology and distance matrix plots...") # WANT THIS
+    print("Generating topology and distance matrix plots...")
     plot_topology_and_distance_matrices(nonrandomized_all_messages, nonrandomized_topologies)
 
     print("Generating delivery success probability plots...")
