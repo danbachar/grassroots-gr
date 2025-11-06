@@ -30,10 +30,10 @@ Where $a_i$ is the amount of resources of node $i$, and $n$ is the total number 
 Hurley and Rickard's work allows us to effectively use tried-and-tested economical metrics to measure the sparsity of the different simulation topologies.
 To conclude, this paper compares the aforementioned metrics with the trivial L0 norm, which is calculated from the different topologies' node degrees followingly:
 \[
-L_0 = \sum_{i=0}^n \begin{cases}
+L_0 = \frac{\sum_{i=0}^n \begin{cases}
   1 & \text{if $a_i > 0$} \\
   0 & \text{otherwise}
-\end{cases}
+\end{cases}}{n}
 \]
-where $a_i$ is the node degree of node $i$.
+where $a_i$ is the node degree of node $i$, and $n$ is the total number of nodes.
 To summarize, this paper uses the Centralization Score $\mathscr{S}$ and the Gini Coefficient $G$, and compares them with a basic metric, the L0 norm, to evaluate different topologies and rank them according to their centralization and sparsity metrics.
