@@ -47,13 +47,20 @@
  publisher = {IEEE},
  doi={10.1109/MLSP.2008.4685455}
 }
-@journal{adaptive-phy,
- author = {{Muhammad Usman Sheikh, Benham Badihi, Kalle Ruttik, Riku Jäntti}},
- title = {Adaptive Physical Layer Selection for Bluetooth 5: Measurements and Simulations},
- year = {2021},
- url = {https://www.bluetooth.com/specifications/bluetooth-core-specification/},
- doi={10.1155/2021/8842919}
+@article{adaptive-phy,
+  author = {{Sheikh, Muhammad Usman and Badihi, Behnam and Ruttik, Kalle and Jäntti, Riku}},
+  title = {Adaptive Physical Layer Selection for Bluetooth 5: Measurements and Simulations},
+  journal = {Wireless Communications and Mobile Computing},
+  volume = {2021},
+  number = {1},
+  pages = {8842919},
+  doi = {https://doi.org/10.1155/2021/8842919},
+  url = {https://onlinelibrary.wiley.com/doi/abs/10.1155/2021/8842919},
+  eprint = {https://onlinelibrary.wiley.com/doi/pdf/10.1155/2021/8842919},
+  abstract = {The main target of this article is to propose a simple Received Signal Strength Indicator- (RSSI-) based adaptive Physical Layer (PHY) selection approach for Bluetooth Low Energy 5.0 (BLE 5) and compare the performance of adaptive PHY selection with the performance of individual PHY. This article also validates the simulation results acquired from the in-house developed Ray Tracing (RT) tool with the BLE 5 measurements conducted in a corridor of the TUAS building, Aalto University. The performance metrics considered for the analysis are RSSI, throughput, and outage ratio. The impact of different transmission power on BLE 5 is also analyzed. The obtained simulation results indicate a Root Mean Square Error (RMSE) of about 4.6 dB between the measured and the simulated RSSI at 2.4 GHz frequency. By investigating these results, an adaptive PHY selection algorithm is proposed in this article. The adaptive PHY selection approach enhances the mean throughput of the system and improves the outage ratio as well. In the light of acquired results, the adaptive PHY selection scheme shows significant performance gain and is found more beneficial in the case of an environment with mixed RSSI samples, i.e., a mix of low and high RSSI values.},
+  year = {2021}
 }
+
 @inproceedings{pathloss,
 author = {Adiyatma, Farid Yuli Martin and Suroso, Dwi Joko and Cherntanomwong, Panarat},
 title = {Regression-based Path Loss Model Correction to Construct Fingerprint Database for Indoor Localization},
@@ -262,4 +269,21 @@ series = {IPTPS '01}
   title={{Bluetooth Core Specification Version 4.2}},
   author={{Bluetooth Special Interest Group}},
   url={https://www.bluetooth.com/specifications/specs/core-specification-4-2/}
+}
+@inproceedings{the-one,
+  author = {{Ker\"{a}nen, Ari and Ott, J\"{o}rg and K\"{a}rkk\"{a}inen, Teemu}},
+  title = {{The ONE simulator for DTN protocol evaluation}},
+  year = {2009},
+  isbn = {9789639799455},
+  publisher = {ICST (Institute for Computer Sciences, Social-Informatics and Telecommunications Engineering)},
+  address = {Brussels, BEL},
+  url = {https://doi.org/10.4108/ICST.SIMUTOOLS2009.5674},
+  doi = {10.4108/ICST.SIMUTOOLS2009.5674},
+  abstract = {Delay-tolerant Networking (DTN) enables communication in sparse mobile ad-hoc networks and other challenged environments where traditional networking fails and new routing and application protocols are required. Past experience with DTN routing and application protocols has shown that their performance is highly dependent on the underlying mobility and node characteristics. Evaluating DTN protocols across many scenarios requires suitable simulation tools. This paper presents the Opportunistic Networking Environment (ONE) simulator specifically designed for evaluating DTN routing and application protocols. It allows users to create scenarios based upon different synthetic movement models and real-world traces and offers a framework for implementing routing and application protocols (already including six well-known routing protocols). Interactive visualization and post-processing tools support evaluating experiments and an emulation mode allows the ONE simulator to become part of a real-world DTN testbed. We show sample simulations to demonstrate the simulator's flexible support for DTN protocol evaluation.},
+  booktitle = {Proceedings of the 2nd International Conference on Simulation Tools and Techniques},
+  articleno = {55},
+  numpages = {10},
+  keywords = {delay-tolerant networking, routing, simulations},
+  location = {Rome, Italy},
+  series = {Simutools '09}
 }

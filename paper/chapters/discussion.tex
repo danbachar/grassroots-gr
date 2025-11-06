@@ -1,1 +1,7 @@
-Discussion
+a point for future research could be to measure the maximum achieved distance with varying transmitting power levels using a different chip or a wireless dongle.
+Furthermore, we were not able to have fine-grain control over exactly when the advertisements were sent, because the BlueZ Bluetooth communication stack and the underlying hardware controller handle the advertisement scheduling internally to prevent antenna overheating.
+To best mitigate this, we set the advertisement interval window to the minimum possible values of to achieve the highest consistent frequency of advertisements sent.
+We were however able to prove that the advertisements were not actually being consistently sent with the configured interval window of 20ms using a Bluetooth sniffer on a mobile phone,
+which measured the actual advertisement intervals: these fluctuated around 20-100ms.
+Another point for future research would be to develop a Bluetooth driver that allows fine-grain control over the advertising scheduling: for that the \texttt{python-dbus} library could be used to directly interface with the underlying communication data bus, D-Bus.
+We can also here observe a sudden unexpected drop in the number of advertisements received (for example, at 20 meters), which we again attribute to temporary environmental interference (e.g. runners at the track passing by the experiment obstructing the clear path, sometimes with phones or other metal objects in their pockets that reflect the signals and cause more wireless interference).

@@ -1,0 +1,54 @@
+% \subsection{Simulations}
+% After finishing the empirical testbed data collection experiment, we used the collected data to derive the signal parameters for the Bluetooth signal path loss model,
+% that was used in the ONE simulator to simulate different experiment topologies.
+% We used an Red-Black tree to store the distance value as keys, with the RSSI values as values, and interpolated for distance points between the keys.
+
+% \begin{figure}[htbp]
+%      \centering
+%      \includegraphics[width=0.5\textwidth]{figures/message-distance-distribution.png}
+%      \caption{Message distance distribution}
+%      \label{fig:message-distance}
+%  \end{figure}
+
+% Figure \ref{fig:message-distance} shows the distribution of the message distances that were generated. In every run, every host attempted to message every other host in the simulation, regardless of whether that host was directly reachable.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/latency_vs_max_degree_inter_high_dist.png}
+    \caption{Latency vs. max node degree - inter-cluster communication}
+\label{fig:latency-vs-max-deg}
+\end{figure}
+
+The figure~\ref{fig:latency-vs-max-deg} shows how the latency of message delivery per communication radius changes with an increase in the maximum constrained node degree.
+The different communication radii are shown as distinct curves on the plot, and shows as expected a trend towards a lower latency with a lower communication radius.
+A lower communication radius in turn creates fewer messages, as there are generally fewer links and peers to propagate messages to, which exhibits less strain on the message buffers of the individual hosts.
+An important insight that I derive from this plot is that increasing the maximum node degree beyond a certain point does not significantly improve the latency of message delivery, and that increase is echoed in longer communication ranges: in other words, the longer the communication range, the less effect an increase in maximum node degree has on the latency of message delivery.
+Surprisingly, higher communication ranges exhibit a positive effect on latency with an increase in maximum node degree, as especially visible in the 100m communication range.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/centralization_metrics_vs_max_degree_inter_high_dist.png}
+    \caption{Centralization vs. max node degree - inter-cluster communication}
+\label{fig:centralization-vs-max-deg}
+\end{figure}
+
+Figure~\ref{fig:centralization-vs-max-deg} shows how the different centralization metrics introduced in section~\ref{sec:state} correlate with an increase in the maximum constrained node degree.
+An extended version of this plot, comparing the aforementioned centralization metrics to the L0 norm also in the intra-cluster communication mode, can be found in the appendix, figure~\ref{fig:centralization-vs-max-deg-full}.
+
+To better understand how fast messages are delivered in different topologies, we generated successful delivery under time threshold heatmaps for different communication ranges and max node degrees, which provide the full image together with the topological matrices introduced in subsection~\ref{subsec:simulations}, as to how messages are exchanged in a specific topology.
+The heat maps that match the example in figure~\ref{fig:topology-matrix-100m-5} shows two identical topologies, in which the communication range is set to 100m, and the maximum node degree is arbitrarily set to 5.
+The matrices have hosts along their X and Y axes, and a cell at position $(i, j)$ is colored more green the more messages host $i$ successfully delivers to host $j$ within the configured time threshold.
+The difference between the two matrices is the time threshold used: for the left plot a tight threshold of 10 seconds was used, while a more relaxed 60s threshold was used for the latter; as expected, the delivery probability improved by about 3x from 4.7\% to 14.2\%.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/range100_maxdeg5_inter_thresholds_10s_60s.png}
+    \caption{Delivery success probability under time thresholds, 100m range, max node degree 5, inter-cluster communication}
+\label{fig:delivery-success-probability}
+\end{figure}
+
+% Figure \ref{fig:centralization-metrics} shows how the maximum node degree, or the amount of parallel connections allowed per node, affects the different centralization metrics we measured, a subplot per communication mode.
+% In the intra-cluster mode, nodes were only allowed to communicate inside the same cluster, and messages were only created between nodes of the same cluster: there were no connections between nodes of different clusters, and no node attempted to message a node of a different cluster.
+% The inter-cluster mode causes a spike in the number of messages created, because nodes are allowed to communicate both with nodes of the same cluster, as well as outside their cluster: there is, insofar as the cluster membership is considered, no limitation on the communication: a node can communicate with all nodes in its communication radius.
+% The lack of communication limitation enables an exponential rise in the number of messages created: in the intra-cluster mode, 151,904 messages were created, as visible in \ref{fig:message-distance}. In the intra-cluster mode, where nodes can establish connections with all nodes within their range upto a maximum configured limit, the message generator generates a message for every pair in every possible permutation of the host list.
+% The same figure shows, that the inter-cluster mode featured over 1.4 million messages.
+% It is important to remark that there is still a limit on the maximum node degree, and each node's links do not churn: once a link has been established in a simulation, it persists until the end of the simulation.
+% At the top we can see the Gini coefficient vs. max node degree, at the middle the Centralization Score vs. max node degree, and at the bottom the L0 norm vs. max node degree, which measured the number of non-zero node degrees.

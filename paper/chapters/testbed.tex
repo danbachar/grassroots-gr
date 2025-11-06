@@ -10,10 +10,10 @@ Our testbed consists of a set of Raspberry Pi 3B+ devices, using the built-in BL
 The Raspberry Pis were flashed with a lightweight 64-bit Linux port (Raspberry Pi OS Lite based on Debian Trixie), upon which the basic Bluetooth stack was installed using BlueZ 5.66.
 
 \subsection{Empirical Insights}
-During the experiment, one Raspberry Pi acted as the transmitting node, continuously emitting BLE advertisements at a fixed interval of 20ms$\mathcal{+X}$, where $\mathcal{X}$ is a random delay uniformly distributed between 0 and 10ms to avoid collisions with other devices using the same advertising interval~(\cite{nordic-bt},~\cite{bt-spec}).
-Another Raspberry Pi performed the receiver role, continuously scanning for a window set to one minute, during which the receiver peer continuously scanned for advertisements from the surrounding environment.
+During the experiment, one Raspberry Pi acted as the transmitting node, using an automated bluetoothctl script to continuously emit BLE advertisements at a fixed interval of 20ms$\mathcal{+X}$, where $\mathcal{X}$ is a random delay uniformly distributed between 0 and 10ms to avoid collisions with other devices using the same advertising interval~(\cite{nordic-bt},~\cite{bt-spec}).
+Another Raspberry Pi performed the receiver role, running a Python script that uses the Bleak library to communicate with the underlying BlueZ BLE stack to scan for a window set to one minute, during which the receiver peer continuously scanned for advertisements from the surrounding environment.
 The two devices were placed at increasing distances from each other, where the advertiser node was kept static and the receiver node was moved.
-At every distance step, the receiver node recorded the RSSI of all ads received from the other node, filtering them by the unique address of the advertising node, and logging the RSSI values, as well as the transmitting power (tx) and a timestamp, to a file.
+At every distance step, the receiver node recorded the RSSI of all ads received from the transmitting node, filtering them by the unique address of the advertising node, and logging the RSSI values, as well as the transmitting power (tx) and a timestamp, to a file.
 Each distance step was repeated twenty times to capture enough data points for statistical significance.
 The distances measured were from 0 meters to 10 meters in increments of 5 meter, and then from 10 meters in increments of 10 meters, until no more ads were received for most runs of that distance.
 The experiment was divided to two parts: in the first part, the distance points up to 30 meters were evaluated in an urban backyard; in the second part, the distance points from 40 meters were evaluated in an olympic athletics field.
@@ -65,3 +65,4 @@ The Probability Density Function (PDF) plot and a time series plot of the RSSI v
     \end{tabular}
 \end{table}
 Next, table~\ref{tab:rssi-stats} shows summary statistics of the RSSI values received at different distances: the mean RSSI values presented at the table were used to parameterize the simulation signal propagation decay with distance.
+Throughout all distances, the same transmitting power was recorded which hints at the default transmitting power of a Raspberry Pi 3b+: 12 dBm.

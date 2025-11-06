@@ -7,9 +7,9 @@ Regarding consolidation of services, DSNs can function as feudal-type subsystems
 Structured peer-to-peer networks such as Chord~\cite{chord}, Kademlia~\cite{kademlia}, and the InterPlanetary File System (IPFS)~\cite{ipfs} use Distributed Hash Tables (DHTs) to store and retrieve (meta-) content in a decentralized manner.
 On the other hand, unstructured peer-to-peer networks are more dynamic and do not use DHTs to spread centralized information. Instead, unstructured peer-to-peer networks rely on flooding, efficient clique-level forwarding, and gossip for content dissemination, as recently exemplified with Amigo~\cite{amigo} and bitchat~\cite{bitchat}, as they do not store information about the cluster membership.
 The concepts of flooding and clique-forwarding are the core principles of this research paper, as the resilience and performance metrics have been measured as factors of decentralization of unstructured peer-to-peer social networks, that are built using flooding and clique-forwarding for neighbor discovery and content dissemination.
-Different countries have wildly varying centralisation levels of their web service providers, which directly impacts their resilience to outages, content delivery latency for end-customers, the cost of communication, and the relative freedom of Internet usage.
+Different countries have wildly varying centralization levels of their web service providers, which directly impacts their resilience to outages, content delivery latency for end-customers, the cost of communication, and the relative freedom of Internet usage.
 In~\cite{dependence} Habib et al. study patterns of web service hosting in different countries, and demonstrating how countries with higher centralization around a smaller number of website hosting providers are more subsceptible to outages, and propose a metric called the Centralization Score $\mathscr{S}$, which Habib uses to measure the centralization of website hosting around a small number of providers, DNS service providers, and CAs.
-The Centralisation Score$\mathscr{S}$ is derived from the Herfindahl-Hirschmann Index (HHI), which is used to measure market competition in US antitrust laws.
+The Centralization Score$\mathscr{S}$ is derived from the Herfindahl-Hirschmann Index (HHI), which is used to measure market competition in US antitrust laws.
 To use the different sparsity metrics we will introduce, the leading metric I used to measure centralization and sparsity is the node degree: the number of connections a node has to other peers in the network topology.
 An overall similarity between individual node degrees increases the resilience of a topology, as a network partition affecting a subset of the nodes will not result in a complete blackout of the network because many alternative paths still exist.
 The Centralization Score $\mathscr{S}$ is defined as follows:
@@ -35,4 +35,4 @@ L_0 = \sum_{i=0}^n \begin{cases}
 \end{cases}
 \]
 where $a_i$ is the node degree of node $i$.
-To summarise, this paper uses the Centralisation Score $\mathscr{S}$ and the Gini Coefficient $G$, and compares them with a basic metric, the L0 norm, to compare different topologies and rank them according to their centralization and sparsity metrics.
+To summarise, this paper uses the Centralization Score $\mathscr{S}$ and the Gini Coefficient $G$, and compares them with a basic metric, the L0 norm, to evaluate different topologies and rank them according to their centralization and sparsity metrics.
