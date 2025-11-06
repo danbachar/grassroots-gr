@@ -2083,7 +2083,7 @@ def main():
     with open(nonrandomized_all_messages_path, 'rb') as f:
         nonrandomized_all_messages: list[Message] = pickle.load(f)
 
-    nonrandomized_delivered_messages_path = f"fixed_delivered_messages_randomized0.pkl"
+    nonrandomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
     with open(nonrandomized_delivered_messages_path, 'rb') as f:
         nonrandomized_delivered_messages: list[Message] = pickle.load(f)
 
