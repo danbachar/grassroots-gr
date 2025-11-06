@@ -1396,30 +1396,26 @@ def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: di
     # Collect data points: latency per run/config
     data_points = []
     
-    config_keys = set()
+    # Pre-group messages by (mode, comm_range, max_deg, run) for O(n) instead of O(n*m)
+    from collections import defaultdict
+    grouped_messages = defaultdict(list)
     for msg in delivered_messages:
         if msg.delivery_time > 0:
-            config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
+            key = (msg.mode, msg.communication_range, msg.max_degree, msg.run)
+            grouped_messages[key].append(msg.delivery_time)
     
-    for mode, comm_range, max_deg in config_keys:
-        for run_num in randomized_runs:
-            # Get delivered messages for this specific run/config
-            msgs_run = [msg for msg in delivered_messages 
-                       if msg.mode == mode and msg.communication_range == comm_range 
-                       and msg.max_degree == max_deg and msg.run == run_num
-                       and msg.delivery_time > 0]
+    # Extract data points from pre-grouped messages
+    for (mode, comm_range, max_deg, run_num), latencies in grouped_messages.items():
+        if run_num in randomized_runs:
+            mean_latency = np.mean(latencies)
             
-            if len(msgs_run) > 0:
-                latencies = [msg.delivery_time for msg in msgs_run]
-                mean_latency = np.mean(latencies)
-                
-                data_points.append({
-                    'mode': mode,
-                    'comm_range': comm_range,
-                    'max_degree': max_deg,
-                    'run': run_num,
-                    'mean_latency': mean_latency
-                })
+            data_points.append({
+                'mode': mode,
+                'comm_range': comm_range,
+                'max_degree': max_deg,
+                'run': run_num,
+                'mean_latency': mean_latency
+            })
     
     ranges = sorted(set(d['comm_range'] for d in data_points))
     max_degrees = sorted(set(d['max_degree'] for d in data_points))
@@ -1766,7 +1762,8 @@ def plot_topology_and_distance_matrices(all_messages: list[Message], topologies:
                 im_dist = ax_dist.imshow(distance_matrix, cmap='viridis', interpolation='nearest', origin='lower')
                 ax_dist.set_xlabel('Host Index', fontsize=16)
                 ax_dist.set_ylabel('Host Index', fontsize=16)
-                cbar_dist = plt.colorbar(im_dist, ax=ax_dist, label='Distance (m)', fontsize=16)
+                cbar_dist = plt.colorbar(im_dist, ax=ax_dist)
+                cbar_dist.set_label('Distance (m)', fontsize=16)
             
             # Plot topology matrices for both modes
             for mode_idx, mode in enumerate(modes):
@@ -2114,7 +2111,7 @@ def main():
     plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=10.0)
     plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=240.0)
 
-    print("Generating topology and distance matrix plots...")
+    print("Generating topology and distance matrix plots...") # WANT THIS
     plot_topology_and_distance_matrices(nonrandomized_all_messages, nonrandomized_topologies)
 
     print("Generating delivery success probability plots...")
