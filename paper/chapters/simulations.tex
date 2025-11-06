@@ -38,8 +38,9 @@ This was done to elicit the effects of the maximum node degree and communication
     \label{fig:message-distance-distribution}
 \end{figure}
 
-Figure \ref{fig:message-distance-distribution} shows the distance distribution of all messages created, aggregated over all simulation runs, communication ranges, and maximum node degrees tested, split by the communication mode. 
-It is evident to see that the intra-cluster communication mode had a generally higher overall delivery probability, possibly attributed to a lesser strain on the individual hosts' message buffers.
+Figure \ref{fig:message-distance-distribution} shows the distance distribution of all messages created, aggregated over all simulation runs, communication ranges, and maximum node degrees tested, split by the communication mode.
+It is evident that the intra-cluster communication mode had a generally higher overall delivery probability, possibly attributed to a lesser strain on the individual hosts' message buffers.
+
 \begin{figure}[hbp]
     \centering
     \includegraphics[width=0.5\textwidth]{figures/range100_maxdeg5_topology_distance.png}
@@ -48,8 +49,5 @@ It is evident to see that the intra-cluster communication mode had a generally h
 \end{figure}
 To better understand the topology, figure \ref{fig:topology-matrix-100m-5} shows the distance matrix between hosts to the left, supplemented by two topological matrices, one for each communication mode.
 The topological matrices have a black cell at position $(i, j)$ if host $i$ is connected to host $j$.
-
 Next, randomized topologies were created for each configuration, to assess how the maximum node degree affects the message latency, centralization, and sparsity metrics of unstructured p2p networks.
 This was done to evaluate how different topologies with the same communication radius and maximum node degree induce variance in the different metrics 
-% A configuration is composed of some properties: in this part, we chose to examine the affects of the per-node Bluetooth interface communication range parameter: as wireless signals exponentially degrade with distance, but the received signal strength correlates with the transmitted signal strength, we are interested in the trade-off between energy consumption and the deliverability of messages, as well as the achievable bitrate.
-% For every simulation run, 1000 messages were generated for every distance bin: the following plot shows a summary of how the message creation distribution varies with range, collected from all runs. We can see a concentration around $\sim$25 meter distance, and a long tail that stretches all the way to $\sim$500 meter.

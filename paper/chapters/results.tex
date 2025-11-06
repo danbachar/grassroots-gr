@@ -6,7 +6,7 @@ Surprisingly, higher communication ranges exhibit a positive effect on latency w
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.5\textwidth]{figures/latency_vs_max_degree_inter_high_dist.png}
+    \includegraphics[width=0.5\textwidth]{figures/latency_vs_max_degree_inter_all_dist.png}
     \caption{Latency vs. max node degree - inter-cluster communication}
 \label{fig:latency-vs-max-deg}
 \end{figure}
@@ -21,10 +21,10 @@ Surprisingly, higher communication ranges exhibit a positive effect on latency w
 Figure~\ref{fig:centralization-vs-max-deg} shows how the different centralization metrics introduced in section~\ref{sec:state} correlate with an increase in the maximum constrained node degree.
 An extended version of this plot, comparing the aforementioned centralization metrics to the L0 norm also in the intra-cluster communication mode, can be found in the appendix, figure~\ref{fig:centralization-vs-max-deg-full}.
 
-To better understand how fast messages are delivered in different topologies, we generated successful delivery under time threshold heatmaps for different communication ranges and max node degrees, which provide the full image together with the topological matrices introduced in subsection~\ref{subsec:simulations}, as to how messages are exchanged in a specific topology.
+To better understand how fast messages are delivered in different topologies, we generated successful delivery under time threshold heatmaps for different communication ranges and max node degrees in figure~\ref{figures/range100_maxdeg5_inter_thresholds_10s_60s.png}, which provide the full image together with the topological matrices introduced in subsection~\ref{subsec:simulations}, as to how messages are exchanged in a specific topology.
 The heat maps that match the example in figure~\ref{fig:topology-matrix-100m-5} shows two identical topologies, in which the communication range is set to 100m, and the maximum node degree is arbitrarily set to 5.
 The matrices have hosts along their X and Y axes, and a cell at position $(i, j)$ is colored more green the more messages host $i$ successfully delivers to host $j$ within the configured time threshold.
-The difference between the two matrices is the time threshold used: for the left plot a tight threshold of 10 seconds was used, while a more relaxed 60s threshold was used for the latter; as expected, the delivery probability improved by about 3x from 4.7\% to 14.2\%.
+The difference between the two matrices is the time threshold used: for the top plot a tight threshold of 10 seconds was used, while a more relaxed 60s threshold was used for the bottom plot. As expected, the delivery probability improved by about 3x from 4.6\% to 13.8\%.
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.5\textwidth]{figures/range100_maxdeg5_inter_thresholds_10s_60s.png}
