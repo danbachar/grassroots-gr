@@ -1,7 +1,6 @@
 from typing import Optional
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import pickle
 from load_data import Message, Hop, HostInfo, Topology, Configuration # types needed otherwise the pickle load won't work
 import os
@@ -20,9 +19,6 @@ def calculate_gini_coefficient(values: list[float]) -> float:
     Returns:
         Gini coefficient (0-1)
     """
-    if not values or len(values) == 0:
-        return 0.0
-    
     # Remove any NaN or infinite values
     values = [v for v in values if np.isfinite(v)]
     
@@ -59,9 +55,6 @@ def calculate_centralization_score(node_degrees: list[float], num_links: int) ->
     Returns:
         Centralization score (higher means more centralized)
     """
-    if not node_degrees or len(node_degrees) == 0:
-        return 0.0
-    
     # Remove any NaN or infinite values
     degrees = [d for d in node_degrees if np.isfinite(d)]
     
@@ -879,9 +872,9 @@ def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: di
         fig3.legend(handles, labels, loc='lower center', ncol=min(len(labels), 3), 
                    bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
         
-        plt.suptitle(f'Inter-cluster Centralization Metrics vs Maximum Node Degree',
-                     fontsize=14, y=0.995)
         plt.tight_layout(rect=[0, 0.03, 1, 1])
+        plt.savefig(f'figures/centralization_metrics_vs_max_degree_inter_{filename_suffix}.png', 
+                    dpi=300, bbox_inches='tight')
         plt.close()
         # GOOD PLOT
     
@@ -1468,12 +1461,14 @@ def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: di
         
         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
         ax.set_ylabel('Mean Latency (seconds)', fontsize=12)
-        # ax.set_title(f'{mode_names[mode]}', fontsize=14)
         ax.grid(True, alpha=0.3)
-        ax.legend(loc='best', fontsize=10)
         ax.set_yscale('log')
         
+        # Place legend below the plot with 4 columns
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=10, frameon=True)
+        
         plt.tight_layout()
+        plt.subplots_adjust(bottom=0.2)  # Make room for legend below
         plt.savefig(f'figures/latency_vs_max_degree_{filename_suffix}.png', 
                    dpi=300, bbox_inches='tight')
         plt.close()
@@ -1518,61 +1513,59 @@ def plot_latency_vs_centralization(delivered_messages: list[Message], topologies
         print("Warning: No randomized topologies found.")
         randomized_runs = [1]
     
+    # Pre-group messages by (mode, comm_range, max_deg, run) for O(n) instead of O(n*m)
+    from collections import defaultdict
+    grouped_messages = defaultdict(list)
+    for msg in delivered_messages:
+        if msg.delivery_time > 0:
+            key = (msg.mode, msg.communication_range, msg.max_degree, msg.run)
+            grouped_messages[key].append(msg.delivery_time)
+    
     # Collect data points
     data_points = []
     
-    config_keys = set()
-    for msg in delivered_messages:
-        if msg.delivery_time > 0:
-            config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
-    
-    for mode, comm_range, max_deg in config_keys:
-        for run_num in randomized_runs:
-            # Get topology metrics
-            config = Configuration(
-                run_number=run_num, 
-                range=comm_range, 
-                max_degree=max_deg, 
-                mode=mode,
-                run_randomize_seed=1
-            )
-            topology = topologies.get(config)
+    # Iterate through grouped messages and calculate metrics
+    for (mode, comm_range, max_deg, run_num), latencies in grouped_messages.items():
+        if run_num not in randomized_runs:
+            continue
             
-            if topology is None:
-                continue
-            
-            # Calculate topology metrics
-            degrees_list = []
-            for node_id in range(TOTAL_NODES):
-                node_name = str(node_id)
-                if node_name in topology.connections:
-                    degrees_list.append(len(topology.connections[node_name]))
-                else:
-                    degrees_list.append(0)
-            
-            gini = calculate_gini_coefficient(degrees_list)
-            num_links = topology.get_number_of_links()
-            s_score = calculate_centralization_score(degrees_list, num_links)
-            
-            # Get latency for this run/config
-            msgs_run = [msg for msg in delivered_messages 
-                       if msg.mode == mode and msg.communication_range == comm_range 
-                       and msg.max_degree == max_deg and msg.run == run_num
-                       and msg.delivery_time > 0]
-            
-            if len(msgs_run) > 0:
-                latencies = [msg.delivery_time for msg in msgs_run]
-                mean_latency = np.mean(latencies)
-                
-                data_points.append({
-                    'mode': mode,
-                    'comm_range': comm_range,
-                    'max_degree': max_deg,
-                    'run': run_num,
-                    'mean_latency': mean_latency,
-                    'gini': gini,
-                    's_score': s_score
-                })
+        # Get topology metrics
+        config = Configuration(
+            run_number=run_num, 
+            range=comm_range, 
+            max_degree=max_deg, 
+            mode=mode,
+            run_randomize_seed=1
+        )
+        topology = topologies.get(config)
+        
+        if topology is None:
+            continue
+        
+        # Calculate topology metrics
+        degrees_list = []
+        for node_id in range(TOTAL_NODES):
+            node_name = str(node_id)
+            if node_name in topology.connections:
+                degrees_list.append(len(topology.connections[node_name]))
+            else:
+                degrees_list.append(0)
+        
+        gini = calculate_gini_coefficient(degrees_list)
+        num_links = topology.get_number_of_links()
+        s_score = calculate_centralization_score(degrees_list, num_links)
+        
+        mean_latency = np.mean(latencies)
+        
+        data_points.append({
+            'mode': mode,
+            'comm_range': comm_range,
+            'max_degree': max_deg,
+            'run': run_num,
+            'mean_latency': mean_latency,
+            'gini': gini,
+            's_score': s_score
+        })
     
     ranges = sorted(set(d['comm_range'] for d in data_points))
     
@@ -1580,134 +1573,144 @@ def plot_latency_vs_centralization(delivered_messages: list[Message], topologies
     low_ranges = [r for r in ranges if r <= 40]
     high_ranges = [r for r in ranges if r >= 50]
     
-    mode_names = {0: 'Intra-cluster', 1: 'Inter-cluster'}
-    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
-    
-    def plot_for_mode_and_ranges(mode, distance_ranges, range_label, filename_suffix):
-        """Helper to plot latency vs centralization metrics"""
-        if not distance_ranges:
-            return
+    def plot_for_range_group(mode, comm_ranges, filename_suffix):
+        """Helper to plot latency vs centralization metrics for a group of communication ranges
         
-        colors_local = plt.cm.viridis(np.linspace(0, 1, len(distance_ranges)))
+        Plots trend lines (linear regression) per communication range, aggregating all max degree configurations.
+        """
         
         # Create 2 subplots: Gini and S-score
-        fig, axes = plt.subplots(2, 1, figsize=(10, 14))
+        fig, axes = plt.subplots(2, 1, figsize=(8, 10))
         
-        # Plot 1: Latency vs Gini
+        # Define markers for different ranges
+        markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
+        
+        # Plot 1: Latency vs Gini (one trend line per range, aggregated across all max degrees)
         ax = axes[0]
-        for range_idx, comm_range in enumerate(distance_ranges):
+        
+        for range_idx, comm_range in enumerate(comm_ranges):
+            # Get all points for this mode and communication range (all max degrees)
             points = [d for d in data_points 
                      if d['mode'] == mode and d['comm_range'] == comm_range]
             
             if not points:
                 continue
             
-            # Group by gini (rounded for grouping)
-            gini_groups = {}
-            for point in points:
-                gini_key = round(point['gini'], 3)  # Round to 0.001 precision
-                if gini_key not in gini_groups:
-                    gini_groups[gini_key] = {'latencies': [], 'ginis': []}
-                gini_groups[gini_key]['latencies'].append(point['mean_latency'])
-                gini_groups[gini_key]['ginis'].append(point['gini'])
+            # Extract all individual data points (no grouping)
+            x_vals = [p['gini'] for p in points]
+            y_vals = [p['mean_latency'] for p in points]
             
-            x_vals = []
-            y_vals = []
-            y_stds = []
+            if len(x_vals) < 2:
+                continue
             
-            for gini_key in sorted(gini_groups.keys()):
-                x_vals.append(np.mean(gini_groups[gini_key]['ginis']))
-                y_vals.append(np.mean(gini_groups[gini_key]['latencies']))
-                y_stds.append(np.std(gini_groups[gini_key]['latencies']))
+            # Convert to numpy arrays
+            x_vals = np.array(x_vals)
+            y_vals = np.array(y_vals)
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=4,
-                           linewidth=1,
-                           capsize=3,
-                           capthick=1,
-                           label=f'{int(comm_range)}m range',
-                           color=colors_local[range_idx])
+            # Compute linear regression in log space (since y-axis is log scale)
+            log_y_vals = np.log10(y_vals)
+            
+            # Fit linear regression
+            coeffs = np.polyfit(x_vals, log_y_vals, 1)
+            poly = np.poly1d(coeffs)
+            
+            # Create smooth x values for trend line
+            x_trend = np.linspace(x_vals.min(), x_vals.max(), 100)
+            y_trend = 10 ** poly(x_trend)  # Convert back from log space
+            
+            # Plot scatter points with transparency
+            ax.scatter(x_vals, y_vals, 
+                      marker=markers[range_idx % len(markers)],
+                      color='gray', 
+                      alpha=0.2, 
+                      s=30)
+            
+            # Plot trend line with markers
+            ax.plot(x_trend, y_trend,
+                   marker=markers[range_idx % len(markers)],
+                   markevery=10,
+                   markersize=8,
+                   linewidth=2.5,
+                   color='black',
+                   alpha=0.8,
+                   label=f'{int(comm_range)}m')
         
         ax.set_xlabel('Gini Coefficient', fontsize=12)
         ax.set_ylabel('Mean Latency (seconds)', fontsize=12)
-        ax.set_title('Mean Latency vs Gini Coefficient', fontsize=14)
         ax.grid(True, alpha=0.3)
         ax.set_yscale('log')
+        ax.legend(loc='best', fontsize=10)
         
-        # Plot 2: Latency vs S-score
+        # Plot 2: Latency vs S-score (one trend line per range, aggregated across all max degrees)
         ax = axes[1]
-        for range_idx, comm_range in enumerate(distance_ranges):
+        
+        for range_idx, comm_range in enumerate(comm_ranges):
+            # Get all points for this mode and communication range (all max degrees)
             points = [d for d in data_points 
                      if d['mode'] == mode and d['comm_range'] == comm_range]
             
             if not points:
                 continue
             
-            # Group by s_score (rounded for grouping)
-            s_groups = {}
-            for point in points:
-                s_key = round(point['s_score'], 4)  # Round to 0.0001 precision
-                if s_key not in s_groups:
-                    s_groups[s_key] = {'latencies': [], 's_scores': []}
-                s_groups[s_key]['latencies'].append(point['mean_latency'])
-                s_groups[s_key]['s_scores'].append(point['s_score'])
+            # Extract all individual data points (no grouping)
+            x_vals = [p['s_score'] for p in points]
+            y_vals = [p['mean_latency'] for p in points]
             
-            x_vals = []
-            y_vals = []
-            y_stds = []
+            if len(x_vals) < 2:
+                continue
             
-            for s_key in sorted(s_groups.keys()):
-                x_vals.append(np.mean(s_groups[s_key]['s_scores']))
-                y_vals.append(np.mean(s_groups[s_key]['latencies']))
-                y_stds.append(np.std(s_groups[s_key]['latencies']))
+            # Convert to numpy arrays
+            x_vals = np.array(x_vals)
+            y_vals = np.array(y_vals)
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=4,
-                           linewidth=1,
-                           capsize=3,
-                           capthick=1,
-                           label=f'{int(comm_range)}m range',
-                           color=colors_local[range_idx])
+            # Compute linear regression in log space (since y-axis is log scale)
+            log_y_vals = np.log10(y_vals)
+            
+            # Fit linear regression
+            coeffs = np.polyfit(x_vals, log_y_vals, 1)
+            poly = np.poly1d(coeffs)
+            
+            # Create smooth x values for trend line
+            x_trend = np.linspace(x_vals.min(), x_vals.max(), 100)
+            y_trend = 10 ** poly(x_trend)  # Convert back from log space
+            
+            # Plot scatter points with transparency
+            ax.scatter(x_vals, y_vals, 
+                      marker=markers[range_idx % len(markers)],
+                      color='gray', 
+                      alpha=0.2, 
+                      s=30)
+            
+            # Plot trend line with markers
+            ax.plot(x_trend, y_trend,
+                   marker=markers[range_idx % len(markers)],
+                   markevery=10,
+                   markersize=8,
+                   linewidth=2.5,
+                   color='black',
+                   alpha=0.8,
+                   label=f'{int(comm_range)}m')
         
         ax.set_xlabel('Centralization Score S', fontsize=12)
         ax.set_ylabel('Mean Latency (seconds)', fontsize=12)
-        ax.set_title('Mean Latency vs Centralization Score', fontsize=14)
         ax.grid(True, alpha=0.3)
         ax.set_yscale('log')
+        ax.legend(loc='best', fontsize=10)
         
-        # Shared legend
-        handles, labels = axes[1].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='lower center', ncol=min(len(labels), 3), 
-                  bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
-        
-        plt.suptitle(f'Mean Latency vs Centralization Metrics\n{mode_names[mode]} - {range_label}',
-                    fontsize=14, fontweight='bold', y=0.995)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.98])
+        plt.tight_layout()
         plt.savefig(f'figures/latency_vs_centralization_{filename_suffix}.png', 
                    dpi=300, bbox_inches='tight')
         plt.close()
     
-    # Generate plots for each mode and distance range combination
-    # for mode in [0, 1]:
-    for mode in [1]:
+    # Generate plots for each mode, grouped by distance ranges
+    for mode in [0, 1]:
         mode_suffix = 'intra' if mode == 0 else 'inter'
         
-        # # Low distances
-        # if low_ranges:
-        #     plot_for_mode_and_ranges(mode, low_ranges, "Low Distances: ≤40m", 
-        #                             f"{mode_suffix}_low_dist")
-        
-        # High distances
+        # Create plots for low and high distance ranges
+        if low_ranges:
+            plot_for_range_group(mode, low_ranges, f"{mode_suffix}_low_dist")
         if high_ranges:
-            plot_for_mode_and_ranges(mode, high_ranges, "High Distances: 50-100m", 
-                                    f"{mode_suffix}_high_dist")
-        
-        # # All distances
-        plot_for_mode_and_ranges(mode, ranges, "All Distances", f"{mode_suffix}_all_dist")
+            plot_for_range_group(mode, high_ranges, f"{mode_suffix}_high_dist")
 
 def plot_topology_and_distance_matrices(all_messages: list[Message], topologies: dict[Configuration, Topology]):
     """
@@ -1779,14 +1782,11 @@ def plot_topology_and_distance_matrices(all_messages: list[Message], topologies:
                 # Plot topology matrix
                 im_topo = ax_topo.imshow(topology_matrix, cmap='binary', interpolation='nearest', 
                                    vmin=0, vmax=1, origin='lower')
-                ax_topo.set_title(f'Topology - {mode_name}', fontsize=14, fontweight='bold')
+                ax_topo.set_title(f'{mode_name} topology', fontsize=14)
                 ax_topo.set_ylabel('Host Index', fontsize=12)
                 ax_topo.set_xlabel('Host Index', fontsize=12)
 
-            fig.suptitle(f'Communication Range: {int(comm_range)}m - Max Degree: {max_deg}', 
-                        fontsize=14, fontweight='bold', y=0.98)
-            
-            plt.tight_layout(rect=[0, 0, 1, 0.96])
+            plt.tight_layout()
             
             plot_filename = f"{plots_dir}/range{int(comm_range)}_maxdeg{max_deg}_topology_distance.png"
             plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
@@ -2184,57 +2184,70 @@ def plot_centralization_metrics_examples():
 
 def main():
     plot_centralization_metrics_examples()
+    # print("Loading message data from pickle files...")
 
-    randomized_all_messages_path = f"all_messages_randomized1.pkl"
-    with open(randomized_all_messages_path, 'rb') as f:
-        randomized_all_messages: list[Message] = pickle.load(f)
+    # randomized_all_messages_path = f"all_messages_randomized1.pkl"
+    # with open(randomized_all_messages_path, 'rb') as f:
+    #     randomized_all_messages: list[Message] = pickle.load(f)
 
-    randomized_delivered_messages_path = f"delivered_messages_randomized1.pkl"
-    with open(randomized_delivered_messages_path, 'rb') as f:
-        randomized_delivered_messages: list[Message] = pickle.load(f)
+    # # # HAVE_LOADED
+    # # randomized_delivered_messages_path = f"delivered_messages_randomized1.pkl"
+    # # with open(randomized_delivered_messages_path, 'rb') as f:
+    # #     randomized_delivered_messages: list[Message] = pickle.load(f)
 
-    nonrandomized_all_messages_path = f"all_messages_randomized0.pkl"
-    with open(nonrandomized_all_messages_path, 'rb') as f:
-        nonrandomized_all_messages: list[Message] = pickle.load(f)
+    # # # HAVE LOADED
+    # # nonrandomized_all_messages_path = f"all_messages_randomized0.pkl"
+    # # with open(nonrandomized_all_messages_path, 'rb') as f:
+    # #     nonrandomized_all_messages: list[Message] = pickle.load(f)
 
-    nonrandomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
-    with open(nonrandomized_delivered_messages_path, 'rb') as f:
-        nonrandomized_delivered_messages: list[Message] = pickle.load(f)
+    # # # HAVE LOADED
+    # # nonrandomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
+    # # with open(nonrandomized_delivered_messages_path, 'rb') as f:
+    # #     nonrandomized_delivered_messages: list[Message] = pickle.load(f)
 
 
-    with open(f"topologies_randomized1.pkl", 'rb') as f:
-        randomized_topologies: dict[Configuration, Topology] = pickle.load(f)
-    with open("topologies_randomized0.pkl", 'rb') as f:
-        nonrandomized_topologies: dict[Configuration, Topology] = pickle.load(f)
+    # # # HAVE LOADED
+    # # with open(f"topologies_randomized1.pkl", 'rb') as f:
+    # #     randomized_topologies: dict[Configuration, Topology] = pickle.load(f)
 
-    print("Generating simple analysis plots...")
-    plot_message_delivery_distribution(nonrandomized_all_messages, nonrandomized_delivered_messages)
+    # # # HAVE LOADED
+    # # with open("topologies_randomized0.pkl", 'rb') as f:
+    # #     nonrandomized_topologies: dict[Configuration, Topology] = pickle.load(f)
 
-    print("Generating max degree vs. throughput analysis plots...")
-    plot_max_degree_vs_throughput(randomized_delivered_messages)
-    plot_max_degree_vs_throughput_run_comparison(randomized_delivered_messages)
+    # # DONE
+    # # print("Generating simple analysis plots...")
+    # # plot_message_delivery_distribution(nonrandomized_all_messages, nonrandomized_delivered_messages)
 
-    print("Generating max degree vs. centralization metrics plots...")
-    plot_metrics_vs_max_degree(randomized_delivered_messages, randomized_topologies)
+    # print("Generating max degree vs. throughput analysis plots...")
+    # plot_max_degree_vs_throughput(randomized_delivered_messages)
+    # plot_max_degree_vs_throughput_run_comparison(randomized_delivered_messages)
 
-    print("Generating latency vs. max degree plots...")
-    plot_latency_vs_max_degree(randomized_delivered_messages, randomized_topologies)
+    # # NOW
+    # # print("Generating max degree vs. centralization metrics plots...")
+    # # plot_metrics_vs_max_degree(randomized_delivered_messages, randomized_topologies)
 
-    print("Generating latency vs. centralization metrics plots...")
-    plot_latency_vs_centralization(randomized_delivered_messages, randomized_topologies)
+    # # DONE
+    # # print("Generating latency vs. max degree plots...")
+    # # plot_latency_vs_max_degree(randomized_delivered_messages, randomized_topologies)
 
-    print("Generating centralization vs. delivery probability plots...")
-    plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=float('inf'))  # All deliveries
-    plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=10.0)
-    plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=240.0)
+    # # NOW 
+    # print("Generating latency vs. centralization metrics plots...")
+    # plot_latency_vs_centralization(randomized_delivered_messages, randomized_topologies)
 
-    print("Generating topology and distance matrix plots...")
-    plot_topology_and_distance_matrices(nonrandomized_all_messages, nonrandomized_topologies)
+    # print("Generating centralization vs. delivery probability plots...")
+    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=float('inf'))  # All deliveries
+    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=10.0)
+    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=240.0)
 
-    print("Generating delivery success probability plots...")
-    plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, 10.0, 60.0)
+    # # DONE
+    # # print("Generating topology and distance matrix plots...")
+    # # plot_topology_and_distance_matrices(nondomized_all_messages, nonrandomized_topologies)
 
-    print("\nAll plots generated successfully!")
+    # # NOW
+    # print("Generating delivery success probability plots...")
+    # plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, 10.0, 60.0)
+
+    # print("\nAll plots generated successfully!")
 
 if __name__ == "__main__":
     main()
