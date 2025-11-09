@@ -1,26 +1,64 @@
 To provide decentralized p2p communication, Lindgren et al.~move away from traditional IP packet forwarding and propose the the Store-Carry-Forward paradigm using Delay-Tolerant Networking (DTN)~\cite{sami}, where hosts store messages while carrying them until another another node is reached which can then forward the messages.
 This paradigm enables the opportunistic usage of technologies, such as Wi-Fi Direct or Bluetooth (ubiquitous to virtually all smartphones and computers), to forward messages while the Internet infrastructure is unavailable, as Legendre et al. present with Twimight~\cite{twimight}.
-% Regarding consolidation of services, DSNs can function as feudal-type subsystems, where users are given the ability to run the entire software stack as their own server, uniting around a set of rules or constitution (cf. Mastodon~\cite{mastodon}), or as a collection of transparent community-operated competing components inter-operating on the same server, like in Bluesky~\cite{bluesky}.
-% Structured p2p networks such as Chord~\cite{chord}, Kademlia~\cite{kademlia}, and the InterPlanetary File System (IPFS)~\cite{ipfs} use Distributed Hash Tables (DHTs) to store and retrieve (meta-) content in a decentralized manner.
-% In comparison to structured p2p networks, unstructured p2p networks are more dynamic as they do not spread centralized information.
 Twimight and most unstructured peer-to-peer networks usually rely on flooding, efficient clique-level forwarding, and gossip for content dissemination, as recently exemplified with Amigo~\cite{amigo} and bitchat~\cite{bitchat}, as this type of networks typically do not store information about the cluster membership. 
 The core principles of this research paper are the concepts of flooding and clique-forwarding, as we measure the resilience and performance metrics for unstructured p2p social networks that are built using flooding and clique-forwarding, particularly important for speedy neighbor discovery and content dissemination.
 The resilience and performance metrics of different common Internet services vary wildly between different countries, depending on the centralization of those services, as centralization of services directly impacts their host countries' overall capacity to mitigate outages, and minimize content delivery latency for end-customers.
 In~\cite{dependence} Habib et al. study patterns of different web service providers in different countries around the world.
-Habib demonstrates how countries with higher centralization around a smaller number of website hosting providers are more susceptible to outages, and propose a metric called the Centralization Score $\mathscr{S}$, which Habib uses to measure the centralization of common Internet services such as web hosting, DNS, and CAs around a small number of providers.
-The centralization Score$\mathscr{S}$ is derived from the Herfindahl-Hirschmann Index (HHI), which is used to measure market competition in US antitrust laws.
+Habib demonstrates how countries with higher centralization around a smaller number of website hosting providers are more susceptible to outages, and propose a metric called the Centralization Score~$\mathscr{S}$, which Habib uses to measure the centralization of common Internet services such as web hosting, DNS, and CAs around a small number of providers.
+The centralization Score~$\mathscr{S}$ is derived from the Herfindahl-Hirschmann Index (HHI), which is used to measure market competition in US antitrust laws.
 The property we used to measure resilience is the node degree, or the number of connections a node has to other peers in the network topology.
 An overall similarity between individual node degrees increases the resilience of a topology, as network partitions affecting a subset of the nodes will not result in a complete blackout of the network because many alternative paths still exist.
-The Centralization Score $\mathscr{S}$ is defined as follows:
+The Centralization Score~$\mathscr{S}$ is defined as follows:
 \[
 \mathscr{S} = \sum_{i=0}^n (\frac{a_i}{C})^2 - \frac{1}{C}
 \]
 where $C$ is the total number of websites considered, $a_i$ is the number of websites hosted by provider $i$, and $n$ is the total number of providers.
 In this paper, $C$ is defined as the total number of edges (i.e. network links), $a_i$ is the degree of node $i$, and $n$ is the total number of nodes.
-% Formally, let $\mathcal{G} = (V,E)$ be a graph, where $\mathcal{V}$ is the set of nodes (vertices), and $\mathcal{E}$ is the set of links (edges). If $(i,j)\in \mathcal{E}$ then $(j,i)\in \mathcal{E}$, i.e., links are bidirectional.
-% There can only exist one link between every pair of nodes, a link increases the node degree of both participating nodes by one, and nodes are not linked to themselves (the node degree of an isolated node, i.e. a node that has no links, is defined as zero).
+\begin{figure}[hbp]
+  \centering
+  \resizebox{0.5\textwidth}{!}{%
+  \begin{tikzpicture}[
+      node/.style={circle, draw=black, fill=blue!30, thick, minimum size=8mm},
+      edge/.style={draw, thick, black}
+  ]
+      \begin{scope}[xshift=0cm]
+          \node[node] (s0) at (0,0) {4};
+          
+          \node[node] (s1) at (90:2.5) {1};
+          \node[node] (s2) at (18:2.5) {1};
+          \node[node] (s3) at (-54:2.5) {1};
+          \node[node] (s4) at (-126:2.5) {1};
+          
+          \draw[edge] (s0) -- (s1);
+          \draw[edge] (s0) -- (s2);
+          \draw[edge] (s0) -- (s3);
+          \draw[edge] (s0) -- (s4);
+      \end{scope}
+      
+      \begin{scope}[xshift=8cm]
+          \node[node] (f0) at (90:2) {4};
+          \node[node] (f1) at (162:2) {4};
+          \node[node] (f2) at (234:2) {4};
+          \node[node] (f3) at (306:2) {4};
+          \node[node] (f4) at (18:2) {4};
+          
+          \draw[edge] (f0) -- (f1);
+          \draw[edge] (f0) -- (f2);
+          \draw[edge] (f0) -- (f3);
+          \draw[edge] (f0) -- (f4);
+          \draw[edge] (f1) -- (f2);
+          \draw[edge] (f1) -- (f3);
+          \draw[edge] (f1) -- (f4);
+          \draw[edge] (f2) -- (f3);
+          \draw[edge] (f2) -- (f4);
+          \draw[edge] (f3) -- (f4);
+      \end{scope}
+  \end{tikzpicture}%
+  }
+  \caption{Sparse vs.~dense topologies}
+\end{figure}
 To sparsity: in their work, Hurley and Rickard compare different measures of sparsity~\cite{sparsity}, and rank different known sparsity measures according to six desirable criteria that a sparsity measure should trivially satisfy, most notably the Robin Hood axiom (`stealing from the rich and giving to the poor`: distributing the website hosting over multiple providers instead of hosting with single provider should reduce sparsity).
-Hurley et al. prove that amongst the most common methods to measure sparsity, the Gini coefficient outperformed all other measurements, and satisfies all six criteria.
+Hurley et al.~prove that amongst the most common methods to measure sparsity, the Gini coefficient outperformed all other measurements, and satisfies all six criteria.
 The Gini coefficient, a metric commonly associated with the Human Development Index to measure income inequality around the world, is calculated as follows:
 \[
 G = \frac{\sum_{i=0}^n \sum_{j=0}^n |a_i - a_j|}{2n \sum_{i=0}^n a_i}
@@ -35,8 +73,3 @@ L_0 = \frac{\sum_{i=0}^n \begin{cases}
 \end{cases}}{n}
 \]
 where $a_i$ is the node degree of node $i$, and $n$ is the total number of nodes.
-% To summarize, this paper evaluates different network topologies and ranks them according to their centralization and sparsity metrics.
-
-
-% The research community has proposed many metrics to measure the centralization, sparsity, communication cost, and resilience of global ISPs, Content Delivery Networks (CDNs), Certificate Authorities (CAs), blockchains, and signals~\cite{dependence,comms-cost,sparsity}, algorithms for selecting the most appropriate communication mode in Bluetooth~\cite{adaptive-phy}, and different signal propagation path loss models~\cite{pathloss}.
-% Most recently, systems and protocols were proposed to enable secure p2p communication between smartphones~\cite{amigo,bitchat,briar}, but none of these works, to our knowledge, evaluate the metrics that prove those systems are actually resilient and appropriate to use in extreme real-world situations.
