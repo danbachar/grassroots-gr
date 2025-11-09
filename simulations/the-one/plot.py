@@ -691,9 +691,7 @@ def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: di
         fig1.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
                    ncol=min(len(labels), 5), fontsize=11, frameon=True)
 
-        plt.suptitle(f'Network Centralization Metrics vs Maximum Node Degree',
-                     fontsize=16, y=0.997)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.99])
+        plt.tight_layout(rect=[0, 0.03, 1, 1])
         plt.savefig(f'figures/centralization_metrics_vs_max_degree_all_metrics_{filename_suffix}.png', 
                     dpi=300, bbox_inches='tight')
         plt.close()
@@ -787,9 +785,7 @@ def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: di
         fig2.legend(handles, labels, loc='lower center', ncol=min(len(labels), 4), 
                    bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
         
-        plt.suptitle(f'Intra-cluster Centralization Metrics vs Maximum Node Degree)',
-                     fontsize=14, y=0.995)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.98])
+        plt.tight_layout(rect=[0, 0.03, 1, 1])
         plt.savefig(f'figures/centralization_metrics_vs_max_degree_intra_{filename_suffix}.png', 
                     dpi=300, bbox_inches='tight')
         plt.close()
@@ -885,9 +881,7 @@ def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: di
         
         plt.suptitle(f'Inter-cluster Centralization Metrics vs Maximum Node Degree',
                      fontsize=14, y=0.995)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.98])
-        plt.savefig(f'figures/centralization_metrics_vs_max_degree_inter_{filename_suffix}.png', 
-                    dpi=300, bbox_inches='tight')
+        plt.tight_layout(rect=[0, 0.03, 1, 1])
         plt.close()
         # GOOD PLOT
     
@@ -2065,8 +2059,131 @@ def plot_delivery_success_matrices_comparison(all_messages: list[Message], deliv
             
             print(f"  Saved: {plot_filename}")
 
+def plot_centralization_metrics_examples():
+    """
+    Visualize centralization metrics with examples:
+    - File 1: Sparse representation (concentrated distribution + metrics with adding zeros)
+    - File 2: Redistributing mass (showing transition from sparse to uniform)
+    Both files use horizontal layout (1 row × 2 columns)
+    """
+    
+    max_nodes = 10
+    
+    # Calculate metrics for adding zeros
+    gini_adding = []
+    s_score_adding = []
+    
+    for n in range(2, max_nodes + 1):
+        data = [10.0] + [0.0] * (n - 1)
+        gini = calculate_gini_coefficient(data)
+        s_score = calculate_centralization_score(data, num_links=sum(data))
+        gini_adding.append(gini)
+        s_score_adding.append(s_score)
+    
+    # FILE 1: Sparse representation (horizontal layout)
+    fig1, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Left: Show the 10-element array with concentration
+    initial_data = [10.0] + [1.0] * 9
+    
+    ax1.bar(range(len(initial_data)), initial_data, width=0.6, 
+            color='steelblue', edgecolor='black', alpha=0.7)
+    ax1.set_ylabel('Value', fontsize=11)
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.set_xlim(-0.5, max_nodes - 0.5)
+    ax1.set_xticks([])  # Remove x-axis ticks
+    
+    # Right: Both metrics for adding zeros
+    x_adding = list(range(2, max_nodes + 1))
+    
+    ax2_twin = ax2.twinx()
+    
+    line1 = ax2.plot(x_adding, gini_adding, marker='o', linewidth=2.5, markersize=6, 
+                     color='darkgreen', label='Gini Coefficient')
+    ax2.set_xlabel('Number of Nodes', fontsize=11)
+    ax2.set_ylabel('Gini Coefficient', fontsize=11, color='darkgreen')
+    ax2.tick_params(axis='y', labelcolor='darkgreen')
+    ax2.grid(True, alpha=0.3)
+    
+    line2 = ax2_twin.plot(x_adding, s_score_adding, marker='s', linewidth=2.5, markersize=6, 
+                          color='darkorange', label='S-score')
+    ax2_twin.set_ylabel('Centralization Score S', fontsize=11, color='darkorange')
+    ax2_twin.tick_params(axis='y', labelcolor='darkorange')
+    
+    # Combine legends
+    lines = line1 + line2
+    labels = [l.get_label() for l in lines]
+    ax2.legend(lines, labels, loc='best')
+    
+    plt.tight_layout()
+    plt.savefig('figures/centralization_sparse.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    # FILE 2: Redistributing mass (horizontal layout)
+    fig2, (ax3, ax4) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Left: Show the uniform distribution
+    final_data = [1.0] * 10
+    
+    ax3.bar(range(len(final_data)), final_data, width=0.6, 
+            color='steelblue', edgecolor='black', alpha=0.7)
+    ax3.set_ylabel('Value', fontsize=11)
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.set_xlim(-0.5, max_nodes - 0.5)
+    ax3.set_xticks([])  # Remove x-axis ticks
+    
+    # Right: Calculate and plot redistribution metrics
+    num_steps = 30
+    gini_redistributing = []
+    s_score_redistributing = []
+    
+    for step in range(num_steps + 1):
+        alpha = step / num_steps
+        sparse = np.array([10.0] + [0.0] * 9)
+        uniform = np.array([1.0] * 10)
+        data = (1 - alpha) * sparse + alpha * uniform
+        
+        gini = calculate_gini_coefficient(data)
+        s_score = calculate_centralization_score(data, num_links=sum(data))
+        gini_redistributing.append(gini)
+        s_score_redistributing.append(s_score)
+    
+    x_redistributing = np.linspace(0, 1, num_steps + 1)
+    
+    ax4_twin = ax4.twinx()
+    
+    line3 = ax4.plot(x_redistributing, gini_redistributing, marker='o', linewidth=2.5, markersize=4, 
+                     color='darkgreen', label='Gini Coefficient')
+    ax4.set_xlabel('Transition: Concentrated (0) → Uniform (1)', fontsize=11)
+    ax4.set_ylabel('Gini Coefficient', fontsize=11, color='darkgreen')
+    ax4.tick_params(axis='y', labelcolor='darkgreen')
+    ax4.grid(True, alpha=0.3)
+    ax4.set_xlim(-0.05, 1.05)
+    
+    line4 = ax4_twin.plot(x_redistributing, s_score_redistributing, marker='s', linewidth=2.5, markersize=4, 
+                          color='darkorange', label='S-score')
+    ax4_twin.set_ylabel('Centralization Score S', fontsize=11, color='darkorange')
+    ax4_twin.tick_params(axis='y', labelcolor='darkorange')
+    
+    # Combine legends
+    lines = line3 + line4
+    labels = [l.get_label() for l in lines]
+    ax4.legend(lines, labels, loc='best')
+    
+    plt.tight_layout()
+    plt.savefig('figures/centralization_redistribution.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Centralization metrics plots saved!")
+    print(f"  - centralization_sparse.png")
+    print(f"  - centralization_redistribution.png")
+    print(f"Adding zeros: Gini goes from {gini_adding[0]:.3f} to {gini_adding[-1]:.3f}")
+    print(f"Adding zeros: S-score goes from {s_score_adding[0]:.3f} to {s_score_adding[-1]:.3f}")
+    print(f"Redistributing: Gini goes from {gini_redistributing[0]:.3f} to {gini_redistributing[-1]:.3f}")
+    print(f"Redistributing: S-score goes from {s_score_redistributing[0]:.3f} to {s_score_redistributing[-1]:.3f}")
+
 def main():
-    print("Loading message data from pickle files...")
+    plot_centralization_metrics_examples()
 
     randomized_all_messages_path = f"all_messages_randomized1.pkl"
     with open(randomized_all_messages_path, 'rb') as f:
