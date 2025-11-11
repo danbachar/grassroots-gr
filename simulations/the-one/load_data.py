@@ -650,6 +650,7 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
             created_message = next(m for m in created_messages_run if m.id == msg.id)
             msg.source = created_message.source
             msg.target = created_message.target
+            msg.creation_time = created_message.creation_time
             
             if msg.source in host_info:
                 msg.source_host = host_info[msg.source]

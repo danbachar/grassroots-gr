@@ -2182,6 +2182,159 @@ def plot_centralization_metrics_examples():
     print(f"Redistributing: Gini goes from {gini_redistributing[0]:.3f} to {gini_redistributing[-1]:.3f}")
     print(f"Redistributing: S-score goes from {s_score_redistributing[0]:.3f} to {s_score_redistributing[-1]:.3f}")
 
+def plot_creation_time_vs_latency(delivered_messages: list[Message], ranges: list[int]):
+    """
+    Plot message creation time vs latency (delivery time).
+    
+    Creates separate plots for:
+    - Intra-cluster (mode 0)
+    - Inter-cluster (mode 1)
+    
+    Each point represents one delivered message, colored by communication range.
+    
+    Args:
+        delivered_messages: List of successfully delivered messages
+    """
+    
+    # Separate messages by mode
+    intra_messages = [msg for msg in delivered_messages if msg.mode == 0]
+    inter_messages = [msg for msg in delivered_messages if msg.mode == 1]
+
+
+    print(f"  Intra-cluster messages: {len(intra_messages)}")
+    print(f"  Inter-cluster messages: {len(inter_messages)}")
+    
+    # Get unique communication ranges
+    # ranges = sorted(set(msg.communication_range for msg in delivered_messages))
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    range_to_color = {r: colors[i] for i, r in enumerate(ranges)}
+    
+    # Create 2x1 subplot layout
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+    
+    # Helper function to smooth data and calculate statistics for continuous line
+    def smooth_and_aggregate(messages, num_points=100):
+        """Create smooth continuous line with shaded IQR region"""
+        if not messages:
+            return [], [], [], []
+        
+        creation_times = np.array([msg.creation_time for msg in messages])
+        latencies = np.array([msg.delivery_time for msg in messages])
+        
+        # Sort by creation time
+        sort_idx = np.argsort(creation_times)
+        creation_times = creation_times[sort_idx]
+        latencies = latencies[sort_idx]
+        
+        # Create smooth x-axis points
+        min_time = creation_times.min()
+        max_time = creation_times.max()
+        x_smooth = np.linspace(min_time, max_time, num_points)
+        
+        # Calculate rolling statistics using a window approach
+        window_size = len(creation_times) // 10  # Adaptive window size
+        window_size = max(window_size, 5)  # At least 5 points
+        
+        median_smooth = []
+        q25_smooth = []
+        q75_smooth = []
+        
+        for x_val in x_smooth:
+            # Find points within a local window around x_val
+            window_width = (max_time - min_time) / 20  # 5% of range
+            mask = np.abs(creation_times - x_val) <= window_width
+            
+            if np.sum(mask) > 0:
+                local_latencies = latencies[mask]
+                median_smooth.append(np.median(local_latencies))
+                q25_smooth.append(np.percentile(local_latencies, 25))
+                q75_smooth.append(np.percentile(local_latencies, 75))
+            else:
+                # If no points in window, use nearest neighbor
+                nearest_idx = np.argmin(np.abs(creation_times - x_val))
+                median_smooth.append(latencies[nearest_idx])
+                q25_smooth.append(latencies[nearest_idx])
+                q75_smooth.append(latencies[nearest_idx])
+        
+        median_smooth = np.array(median_smooth)
+        q25_smooth = np.array(q25_smooth)
+        q75_smooth = np.array(q75_smooth)
+        
+        return x_smooth, median_smooth, q25_smooth, q75_smooth
+    
+    # Plot intra-cluster
+    for range_idx, comm_range in enumerate(ranges):
+        range_msgs = [msg for msg in intra_messages if msg.communication_range == comm_range]
+        if range_msgs:
+            print(f"    Intra-cluster range {comm_range}m: {len(range_msgs)} messages")
+            
+            x_smooth, median_smooth, q25_smooth, q75_smooth = smooth_and_aggregate(range_msgs)
+            
+            if len(x_smooth) > 0:
+                color = range_to_color[comm_range]
+                
+                # Plot the median line
+                ax1.plot(x_smooth, median_smooth, 
+                        linewidth=2.5,
+                        color=color,
+                        label=f'{int(comm_range)}m range',
+                        alpha=0.9)
+                
+                # Add shaded IQR region (25th to 75th percentile)
+                ax1.fill_between(x_smooth, 
+                                q25_smooth, 
+                                q75_smooth,
+                                color=color,
+                                alpha=0.2)
+    
+    ax1.set_xlabel('Message Creation Time (seconds)', fontsize=12)
+    ax1.set_ylabel('Latency (seconds)', fontsize=12)
+    ax1.set_title('Intra-cluster: Creation Time vs Latency', fontsize=14)
+    ax1.set_yscale('log')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc='best', fontsize=10)
+    
+    # Plot inter-cluster
+    for range_idx, comm_range in enumerate(ranges):
+        range_msgs = [msg for msg in inter_messages if msg.communication_range == comm_range]
+        if range_msgs:
+            print(f"    Inter-cluster range {comm_range}m: {len(range_msgs)} messages")
+            
+            x_smooth, median_smooth, q25_smooth, q75_smooth = smooth_and_aggregate(range_msgs)
+            
+            if len(x_smooth) > 0:
+                color = range_to_color[comm_range]
+                
+                # Plot the median line
+                ax2.plot(x_smooth, median_smooth, 
+                        linewidth=2.5,
+                        color=color,
+                        label=f'{int(comm_range)}m range',
+                        alpha=0.9)
+                
+                # Add shaded IQR region (25th to 75th percentile)
+                ax2.fill_between(x_smooth, 
+                                q25_smooth, 
+                                q75_smooth,
+                                color=color,
+                                alpha=0.2)
+    
+    ax2.set_xlabel('Message Creation Time (seconds)', fontsize=12)
+    ax2.set_ylabel('Latency (seconds)', fontsize=12)
+    ax2.set_title('Inter-cluster: Creation Time vs Latency', fontsize=14)
+    ax2.set_yscale('log')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(loc='best', fontsize=10)
+    
+    plt.tight_layout()
+    fpath = 'figures/creation_time_vs_latency.png'
+    plt.savefig(fpath, dpi=300, bbox_inches='tight')
+    print(f"Saved creation time vs latency plot: {fpath}")
+    plt.close()
+    
+    # print("Creation time vs latency plot saved!")
+    print(f"  Intra-cluster messages: {len(intra_messages)}")
+    print(f"  Inter-cluster messages: {len(inter_messages)}")
 def main():
     plot_centralization_metrics_examples()
     # print("Loading message data from pickle files...")
@@ -2195,10 +2348,7 @@ def main():
     # # with open(randomized_delivered_messages_path, 'rb') as f:
     # #     randomized_delivered_messages: list[Message] = pickle.load(f)
 
-    # # # HAVE LOADED
-    # # nonrandomized_all_messages_path = f"all_messages_randomized0.pkl"
-    # # with open(nonrandomized_all_messages_path, 'rb') as f:
-    # #     nonrandomized_all_messages: list[Message] = pickle.load(f)
+    plot_creation_time_vs_latency(randomized_delivered_messages, ranges=[70, 80, 100])
 
     # # # HAVE LOADED
     # # nonrandomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
@@ -2247,7 +2397,9 @@ def main():
     # print("Generating delivery success probability plots...")
     # plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, 10.0, 60.0)
 
-    # print("\nAll plots generated successfully!")
+    plot_creation_time_vs_latency(randomized_delivered_messages, ranges=[70, 80, 100])
+
+    print("\nAll plots generated successfully!")
 
 if __name__ == "__main__":
     main()
