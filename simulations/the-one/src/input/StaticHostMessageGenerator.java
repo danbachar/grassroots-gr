@@ -22,6 +22,7 @@ public class StaticHostMessageGenerator
   private boolean firstRun = true;
   private static List<HostPair> pairs = null;
   private static Iterator<HostPair> pairIterator = null;
+  private static HostPair currentMessagingPair;
 
   public enum Mode {
     INTRA_CLUSTER,
@@ -49,7 +50,7 @@ public class StaticHostMessageGenerator
 
     public void purgeMessageBuffers() {
       fromHost.purgeMessageBuffer(toHost);
-      toHost.purgeMessageBuffer(fromHost);
+      toHost.purgeMessageBuffer(fromHost); // TODO: is this needed? maybe this is purging messages we dont need to purge?
     }
   }
 
@@ -82,7 +83,6 @@ public class StaticHostMessageGenerator
       
       // Create COUNT messages for each valid host pair
       for (DTNHost fromHost : hosts1) {
-
         for (DTNHost toHost : hosts2) {
           if (fromHost != toHost) {
             // Check if this pair is valid for the current mode
@@ -102,30 +102,33 @@ public class StaticHostMessageGenerator
     }
 
     // Find next pair with remaining messages
-    HostPair pair = null;
-    while (pairIterator.hasNext()) {
-      HostPair candidate = pairIterator.next();
-      if (candidate.count > 0) {
-        pair = candidate;
-        break;
-      }
+    if (currentMessagingPair == null || currentMessagingPair.count == 0) {
+        while (pairIterator.hasNext()) {
+            HostPair candidate = pairIterator.next();
+            if (candidate.count > 0) {
+                currentMessagingPair = candidate;
+                break;
+            }
+        }
     }
 
-    if (pair == null) {
+    boolean neverHadAnyPairs = currentMessagingPair == null;
+    boolean ranOutOfMessages = !pairIterator.hasNext() && currentMessagingPair != null && currentMessagingPair.count == 0;
+    if (neverHadAnyPairs ||  ranOutOfMessages) {
       SimScenario.getInstance().getWorld().cancelSim();
       this.nextEventsTime = Double.MAX_VALUE;
       return new ExternalEvent(this.nextEventsTime);
     }
 
-    int from = pair.fromHost.getAddress();
-    int to = pair.toHost.getAddress();
+    int from = currentMessagingPair.fromHost.getAddress();
+    int to = currentMessagingPair.toHost.getAddress();
     int msgSize = drawMessageSize();
     int interval = drawNextEventTimeDiff();
-    int newCount = pair.decrementCount();
+    int newCount = currentMessagingPair.decrementCount();
     
     // No need to remove - just let the iterator skip exhausted pairs
     if (newCount <= 0) {
-      pair.purgeMessageBuffers();
+      currentMessagingPair.purgeMessageBuffers();
     }
 
     MessageCreateEvent mce = new MessageCreateEvent(from, to, this.getID(),
