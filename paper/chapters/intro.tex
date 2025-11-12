@@ -1,16 +1,23 @@
-The decentralized administration of the Internet is one of the basic enablers of the rapid growth of the Internet as a whole, thanks to the autonomous nature of different network systems.
+The decentralized administration of the Internet is one of the basic enablers of the rapid growth of the Internet as a whole, thanks to the autonomous nature of different network systems~\cite{why-internet-works}.
 Different Internet Service Providers (ISPs) play a critical role in the functionality of the Internet, as they connect their end customers (Internet users) to the Internet backhaul.
 The power dynamic of this system inherently gives control over shaping consumption patterns to the ISPs: consolidation of power at the hands of a few ISPs gives them the unique ability to control, throttle, or monitor the flow of information, in addition to enabling oppressive practices such as censorship and surveillance of end users. 
-Most recently, communication disruptions due to airstrikes on main fiber optic lines and radio sites, and the depletion of fuel for generators, have severely limited the information flow to the population of Gaza since the start of the war in October 2023, halting humanitarian coordination, and leaving the affected population entirely cut off from life-saving information and assistance (\cite{gaza-brief},~\cite{gaza-report}).
-In addition to these physical disruptions, governmental control of the telecommunication infrastructure often leads to the repression of communities during times of political unrest (\cite{digital-repression-palestine},~\cite{internet-shutdown-human-rights}), severely limiting the possibility for social actors to dissent and organize themselves.
-Together, the aforementioned practices have led to a growing interest in peer-to-peer (p2p) messaging platforms and decentralized social networks~\cite{bluesky,mastodon}.
-Most notably, the rise of p2p messaging platforms like Firechat~\cite{firechat}, Briar~\cite{briar}, and Amigo~\cite{amigo}, have proven that there is a growing shift in user interest patterns away from traditional Centralized Social Networks towards diverse p2p social networks.
-Physical p2p networks have a limited communication radius, draw support from their underlying hardware and protocols, and utilize multi-hop communication.
-There are a plethora of protocols to use for p2p communication, and we chose to focus on stable protocols that most devices support and the populace are most likely to use in a disaster scenario: virtually all smartphones support Bluetooth and smartphone usage is largely ubiquitous, even in refugee camps and disaster zones.
-By focusing on low-power communication, device battery life can be conserved to allow for critical communication in extreme situations: we thus decided to use Bluetooth Low Energy (BLE) for our p2p communication protocol, which allows users to exchange messages over short ranges.
-There exist both structured and unstructured p2p networks: structured p2p networks include systems such as Chord~\cite{chord}, Kademlia~\cite{kademlia}, and the InterPlanetary File System (IPFS)~\cite{ipfs}: the commonality to all of the above is the usage of Distributed Hash Tables (DHTs) to store and retrieve centralized content in a decentralized manner.
-On the contrary, unstructured p2p networks are more suitable for for dynamic alternative communication methods often necessary to guarantee free speech in disaster zones, during protests, and for citizens living under oppressive regimes, as they inherently exhibit a higher level of resilience to topology changes.
-This paper focuses on proving that unstructured p2p networks provide more resilient communications as the underlying network topology become less sparse and more equally densely distributed.
+Governmental control of the telecommunication infrastructure often leads to the repression of communities during times of political unrest~\cite{digital-repression-palestine,internet-shutdown-human-rights}, severely limiting the possibility for social actors to dissent and organize themselves.
+In addition to policial repression engaged by the government, physical distruptions can also limit free speech.
+Most recently, communication disruptions due to airstrikes on main fiber optic lines, and the depletion of fuel for generators, have severely limited the information flow to the population of Gaza since the start of the Israel-Hamas war in October 2023, halting humanitarian coordination, and leaving the affected population entirely cut off from life-saving information and assistance \cite{gaza-brief,gaza-report}.
+
+Together, the aforementioned practices have led to a growing interest in peer-to-peer (p2p) messaging platforms, decentralized social networks~\cite{bluesky,mastodon}, and distributed ledger-based applications~\cite{bitcoin,ethereum}.
+To guarantee free speech in disaster zones, during protests, and for citizens living under oppressive regimes, we decide to focus on unstructured p2p networks, as they inherently exhibit a higher level of resilience to topology changes and churn, in comparison to structured p2p networks.
+The commonality to most structured p2p networks is the usage of Distributed Hash Tables (DHTs) to guide the communication and storage distribution in the network.
+Popular structured p2p networks include systems as Chord~\cite{chord}, Kademlia~\cite{kademlia}, and the InterPlanetary File System (IPFS)~\cite{ipfs}.
+On the contrary, unstructured p2p networks are more suitable for highly-dynamic alternative communication methods, often necessary to guarantee free decentralized communication means.
+Most notably, the rise of unstructured p2p messaging platforms like Firechat~\cite{firechat}, Briar~\cite{briar}, and Amigo~\cite{amigo}, have proven that there is a growing shift in user interest patterns away from traditional Centralized Social Networks towards diverse p2p social networks.
+
+After exploring the different types of p2p overlay networks, we discuss the choice of the communication protocol, which dictates the limited physical device communication radius.
+We chose to focus on a stable protocol that most modern devices support and the populace is most likely to use in disaster zones: Bluetooth, and more specifically Bluetooth Low Energy (BLE)~\cite{bt-spec}.
+By focusing on BLE-based p2p communication, we can conserve device battery life, to allow for critical communication in extreme situations: it allows users to exchange messages over short ranges over a longer period of time than comparable communication protocols e.g. WiFi Direct, which would drain the battery faster in constrained devices~\cite{wifi-ble-power}.
+
+This paper provides the design space for resilient unstructured p2p networks, amid differently sparse underlying network topologies.
+
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.5\textwidth]{figures/centralization_sparse.png}
@@ -26,12 +33,13 @@ While the left plot simply shows the distribution of values, the right plot comp
     \caption{Dense topology}
     \label{fig:centralization-redistribution}
 \end{figure}
-An increasingly dense topology can be observed in the figure~\ref{fig:centralization-redistribution}, that illustrates the change in resilience metrics as the topology becomes equally distributed.
-The value at the start of this plot represents an extremely unequal distribution of data where one node dominates all resources (i.e. network links), and as the plot progresses on the X axis, the topology gradually reaches a state of perfect equilibrium where all nodes are equally connected.
+An increasingly dense topology can be observed in figure~\ref{fig:centralization-redistribution}, that illustrates the change in resilience metrics as the topology becomes equally distributed.
+The value at the start of this plot represents an extremely unequal distribution, where one node dominates all resources (i.e. network links), and as the plot progresses on the X axis, the topology gradually reaches a state of perfect equilibrium where all nodes are equally connected.
 It is noteworthy to observe that the Gini coefficient at the end of this plot reaches a minimum value of 0, indicating perfect equality, where the $\mathscr{S}$ score does not; this is because the Gini coefficient is calculated by computing the difference in individual concentration of value in the network, and when all those differences are zero, the Gini coefficient also reaches zero.
 This is because the Gini measurement focuses on the \textbf{overall} inequality distribution, where the $\mathscr{S}$ score focuses on the \textbf{top} dominant values, which makes it inherently sensitive to outliers.
-In this research paper, we conduct a comprehensive representational experiment to collect empirical data on the stochastics of the BLE signal propagation over different distances, and use the collected real-world empirical evidence to parameterize simulations of unstructured p2p networks, and then measure their resilience~(\cite{sparsity},~\cite{dependence}), and theoretical channel capacity.
-Finally, we propose design considerations for p2p overlays that outperform state-of-the-art overlay designs based on our simulations.
+
+In this research paper, we conduct a comprehensive representational experiment to collect empirical data on the stochastics of the BLE signal propagation over different distances, and use the collected real-world empirical evidence to parameterize simulations of unstructured p2p networks, and then measure their resilience~\cite{sparsity,dependence}, and theoretical channel capacity.
+This contribution proposes a resilience metric for local p2p overlays, which captures resilience based on sparsity. For this, in section~\ref{sec:state}, we discuss the Bluetooth protocol, and usual metrics that capture resilience and centralization.
 In section~\ref{sec:state} we discuss the Bluetooth protocol background, the state of the art of sparsity and resilience metrics as measurable in network topologies, and present related works.
 Section~\ref{sec:setup} describes the setup of the experiment testbed that captures the BLE measurements, presents the empirical results from the testbed which we then use as parameters for the simulations, and closes with detailing the simulation setup \ref{subsec:simulations}.
 Following the setup section, section~\ref{sec:evaluation} evaluates the results from the simulations, concluded by the discussion on section~\ref{sec:discussion}.
