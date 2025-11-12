@@ -1,5 +1,4 @@
-Originally we intended to measure WiFi signal propagation in addition to Bluetooth, we decided to focus on the latter as it is more power efficient, and requires no network infrastructure.
-Furthermore, Bluetooth Low Energy (BLE) was picked over classic Basic Rate/Enhanced Data Rate (BR/EDR), as BLE is even more efficient for (small) message exchanges~\cite{bt-spec}.
+We decided to focus on Bluetooth Low Energy (BLE) as it is more power efficient, over classic Basic Rate/Enhanced Data Rate (BR/EDR), as BLE is even more efficient for (small) message exchanges~\cite{bt-spec}.
 To measure the BLE signal coverage stochastics and how the signal propagates in free space, we compared the Received Signal Strength Indicator (RSSI) of BLE advertisements at the receiver node across increasing distances from the transmitter node.
 BLE ads form the bottleneck of BLE communications, as ads are used to discover and connect to neighbours in local networks.
 Due to the half-duplex nature of BLE, peers are not able to advertise while they are scanning for BLE ads.
