@@ -9,7 +9,7 @@ Our testbed consists of a set of Raspberry Pi 3B+ devices, using the built-in BL
 The Raspberry Pis were flashed with a lightweight 64-bit Linux port (Raspberry Pi OS Lite based on Debian Trixie), upon which the basic Bluetooth stack was installed using BlueZ 5.66.
 
 \subsection{Empirical Insights}
-During the experiment, one Raspberry Pi acted as the transmitting node, using an automated bluetoothctl script to continuously advertise at a fixed interval of 20ms $+\mathcal{X}$, where $\mathcal{X}$ is a random variable uniformly distributed between 0 and 10ms, representing the delay added to avoid collisions with other devices using the same advertising interval~(\cite{nordic-bt},~\cite{bt-spec}).
+During the experiment, one Raspberry Pi acted as the transmitting node, using an automated bluetoothctl script to continuously advertise at a fixed interval of 20ms $+\mathcal{X}$, where $\mathcal{X}$ is a random variable uniformly distributed between 0 and 10ms, representing the delay added to avoid collisions with other devices using the same advertising interval~\cite{nordic-bt,bt-spec}.
 Another Raspberry Pi performed the receiver role, running a Python script that uses the Bleak library to continuously scan for a window set to one minute.
 The two devices were placed at increasing distances from each other, where the advertiser node was kept static and the receiver node was moved.
 At every distance step, the receiver node recorded the RSSI of all ads received from the transmitting node, filtering them by the unique address of the advertising node, and logging the RSSI values, as well as the transmitting power (tx) and a timestamp, to a file.

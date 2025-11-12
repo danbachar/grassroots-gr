@@ -1,4 +1,4 @@
-@article{handley,
+@article{why-internet-works,
   title={Why the internet only just works},
   author={Mark Handley},
   journal={BT Technology Journal},
@@ -286,4 +286,75 @@ series = {IPTPS '01}
   keywords = {delay-tolerant networking, routing, simulations},
   location = {Rome, Italy},
   series = {Simutools '09}
+}
+@inproceedings{guzman22,
+  author = {Guzman, David and Trossen, Dirk and McBride, Mike and Fan, Xinxin},
+  title = {Insights on Impact of Distributed Ledgers on Provider Networks},
+  year = {2022},
+  isbn = {978-3-031-23494-1},
+  publisher = {Springer-Verlag},
+  address = {Berlin, Heidelberg},
+  url = {https://doi.org/10.1007/978-3-031-23495-8_1},
+  doi = {10.1007/978-3-031-23495-8_1},
+  abstract = {Internet scale distributed consensus takes advantage of randomized algorithms to cope with functional resilience, reliability and access while accomplishing decentralized agreement at expenses of costly unicast communication. This paper provides experimental insights on randomized communication patterns for distributed consensus systems. We define, measure and approximate communication overhead against key performance indicators like latency and communication overhead, leading to a discussion on how network innovations may mitigate the identified issues. While this paper does not promote specific solutions or DLT implementations, our initial insights invite the wider community working on DLT and network solutions alike to deepen those insights to aid future research and development into solutions, concepts, and technologies.},
+  booktitle = {Blockchain – ICBC 2022: 5th International Conference, Held as Part of the Services Conference Federation, SCF 2022, Honolulu, HI, USA, December 10–14, 2022, Proceedings},
+  pages = {3–17},
+  numpages = {15},
+  keywords = {Networking, Permissionless, Distributed consensus},
+  location = {Honolulu, HI, USA}
+}
+@article{bitcoin,
+  title={Bitcoin: A peer-to-peer electronic cash system},
+  author={Nakamoto, Satoshi},
+  journal={Available at SSRN 3440802},
+  year={2008}
+}
+@article{ethereum,
+  title={Ethereum white paper},
+  author={Buterin, Vitalik and others},
+  journal={GitHub repository},
+  volume={1},
+  number={22-23},
+  pages={5--7},
+  year={2013},
+  url={https://ethereum.org/content/whitepaper/whitepaper-pdf/Ethereum_Whitepaper_-_Buterin_2014.pdf},
+}
+@article{wifi-ble-power,
+  author={Friedman, Roy and Kogan, Alex and Krivolapov, Yevgeny},
+  journal={IEEE Transactions on Mobile Computing}, 
+  title={On Power and Throughput Tradeoffs of WiFi and Bluetooth in Smartphones}, 
+  year={2013},
+  volume={12},
+  number={7},
+  pages={1363-1376},
+  keywords={IEEE 802.11 Standards;Bluetooth;Smart phones;Power demand;Throughput;Power measurement;WiFi;Bluetooth;smartphones;power consumption;throughput},
+  doi={10.1109/TMC.2012.117}
+  }
+
+  @inproceedings{guzman23,
+  author = {Guzman, David and Trossen, Dirk and Ott, Joerg},
+  title = {If Iterative Diffusion Is The Answer, What Was The Question?},
+  year = {2023},
+  isbn = {9798400702761},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  url = {https://doi.org/10.1145/3607504.3609288},
+  doi = {10.1145/3607504.3609288},
+  abstract = {A Distributed Concensus System (DCS) is a key component for a distributed system, maintaining and consenting over distributed state, as often required in distributed filesystems, cryptocurrencies and other applications. The prevalent mechanism to distribute the information needed to reach consensus in a DCS is through an iterative diffusion with the goal of distributing the (updated) information to at least the majority of DCS participants. Such diffusion is not just costly in maintaining the needed communication relations but also incurs latency in performing the diffusion itself. When looking closer at the goal of achieving the majority rule, however, one may wonder of the lack of multicast being used for achieving the same goal. This paper thus returns to the original intention of how to distribute information to a large set of users and outlines reasons for why multicast has not been widely used thus far. We evaluate the potential gain in doing so, based on an analytical model for the diffusion latency in an iterative diffusion DCS, bounded through empirical studies in an Ethereum system.},
+  booktitle = {Proceedings of the 2nd ACM SIGCOMM Workshop on Future of Internet Routing \& Addressing},
+  pages = {29–34},
+  numpages = {6},
+  location = {New York, NY, USA},
+  series = {FIRA '23}
+}
+@techreport{guzman25,
+  author = {Guzman, David and Trossen, Dirk and Ott, Joerg},
+  title = {{Multicast Applicability for Distributed Consensus Systems}},
+  institution = {Internet Engineering Task Force},
+  type = {Internet-Draft},
+  number = {draft-guzman-multicast-applicability-dcs-00},
+  howpublished = {\url{https://datatracker.ietf.org/doc/html/draft-guzman-multicast-applicability-dcs-00}},
+  year = {2025},
+  month = {March},
+  note = {Work in Progress, Expired 4 September 2025}
 }
