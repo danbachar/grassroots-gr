@@ -4,6 +4,7 @@
  */
 package core;
 
+import input.StaticHostMessageGenerator;
 import routing.MessageRouter;
 
 /**
@@ -139,6 +140,7 @@ public abstract class Connection {
 		getOtherNode(msgFromNode).messageTransferred(this.msgOnFly.getId(),
 				msgFromNode);
 		clearMsgOnFly();
+		StaticHostMessageGenerator.deliveredMessages++;
 	}
 
 	/**

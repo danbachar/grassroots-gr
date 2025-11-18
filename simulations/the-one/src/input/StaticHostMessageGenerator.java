@@ -1,9 +1,11 @@
 package input;
 
 import core.*;
-import interfaces.BluetoothInterface;
-import java.util.*;
 import movement.RandomStationaryCluster;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
 public class StaticHostMessageGenerator
     extends SingleMessageGenerator {
   /**
@@ -22,7 +24,8 @@ public class StaticHostMessageGenerator
   private boolean firstRun = true;
   private static List<HostPair> pairs = null;
   private static Iterator<HostPair> pairIterator = null;
-  private static HostPair currentMessagingPair;
+  public static int deliveredMessages = 0;
+  public static int totalMessages = 0;
 
   public enum Mode {
     INTRA_CLUSTER,
@@ -70,6 +73,18 @@ public class StaticHostMessageGenerator
     this.mode = Mode.getByValue(s.getInt(MODE_S));
   }
 
+  // Find next pair with remaining messages
+  private Optional<HostPair> getNextMessagingPair() {
+    while (pairIterator.hasNext()) {
+        HostPair candidate = pairIterator.next();
+        if (candidate.count > 0) {
+            return Optional.of(candidate);
+        }
+    }
+
+    return Optional.empty();
+  }
+
   @Override
   public ExternalEvent nextEvent() {
     if (this.firstRun) {
@@ -86,7 +101,7 @@ public class StaticHostMessageGenerator
         for (DTNHost toHost : hosts2) {
           if (fromHost != toHost) {
             // Check if this pair is valid for the current mode
-            boolean isValidPair = (this.mode == Mode.INTER_CLUSTER) || 
+            boolean isValidPair = (this.mode == Mode.INTER_CLUSTER) ||
                                  (((RandomStationaryCluster) fromHost.getMovementModel()).isInSameCluster(toHost));
             if (isValidPair) {
               pairs.add(new HostPair(fromHost, toHost, this.countPerPair));
@@ -94,42 +109,49 @@ public class StaticHostMessageGenerator
           }
         }
       }
-      
-      System.out.println("Generated " + pairs.size()*this.countPerPair + (this.mode == Mode.INTER_CLUSTER ? " inter" : " intra ") + "cluster messages for " + pairs.size() + " pairs");
+
+      if (pairs.isEmpty()) {
+        SimScenario.getInstance().getWorld().cancelSim();
+        this.nextEventsTime = Double.MAX_VALUE;
+        return new ExternalEvent(this.nextEventsTime);
+      }
+      totalMessages = pairs.size() * this.countPerPair;
+      System.out.println("Generated " + totalMessages + (this.mode == Mode.INTER_CLUSTER ? " inter" : " intra ") + "cluster messages for " + pairs.size() + " pairs");
 
       this.firstRun = false;
       pairIterator = pairs.iterator();
     }
 
-    // Find next pair with remaining messages
-    if (currentMessagingPair == null || currentMessagingPair.count == 0) {
-        while (pairIterator.hasNext()) {
-            HostPair candidate = pairIterator.next();
-            if (candidate.count > 0) {
-                currentMessagingPair = candidate;
-                break;
-            }
-        }
+    // iterator will iterate on the entire list, once it reaches the end it will go back to start if there are more messages to send
+    // if end is reached and no more messages, stop simulation
+    Optional<HostPair> currentMessagingPair = getNextMessagingPair();
+    if (currentMessagingPair.isEmpty()) {
+      boolean hasMoreMessagesToSend = pairs.stream().anyMatch(p -> p.count > 0);
+      if (hasMoreMessagesToSend) {
+        // go back to start, shuffle order
+        pairs = pairs.stream().filter(p -> p.count > 0).collect(Collectors.toList());
+        Collections.shuffle(pairs);
+        pairIterator = pairs.iterator();
+        currentMessagingPair = getNextMessagingPair();
+      }
     }
 
-    boolean neverHadAnyPairs = currentMessagingPair == null;
-    boolean ranOutOfMessages = !pairIterator.hasNext() && currentMessagingPair != null && currentMessagingPair.count == 0;
-    if (neverHadAnyPairs ||  ranOutOfMessages) {
-      SimScenario.getInstance().getWorld().cancelSim();
+    boolean finishedAllMessages = totalMessages == deliveredMessages;
+    if (currentMessagingPair.isEmpty() || finishedAllMessages) {
+      if (finishedAllMessages) {
+        // we only cancel if all messages have been delivered; otherwise there are more messages cruising around waiting to be delivered
+        SimScenario.getInstance().getWorld().cancelSim();
+      }
       this.nextEventsTime = Double.MAX_VALUE;
       return new ExternalEvent(this.nextEventsTime);
     }
 
-    int from = currentMessagingPair.fromHost.getAddress();
-    int to = currentMessagingPair.toHost.getAddress();
+    var pair = currentMessagingPair.get();
+    int from = pair.fromHost.getAddress();
+    int to = pair.toHost.getAddress();
     int msgSize = drawMessageSize();
     int interval = drawNextEventTimeDiff();
-    int newCount = currentMessagingPair.decrementCount();
-    
-    // No need to remove - just let the iterator skip exhausted pairs
-    if (newCount <= 0) {
-      currentMessagingPair.purgeMessageBuffers();
-    }
+    pair.decrementCount();
 
     MessageCreateEvent mce = new MessageCreateEvent(from, to, this.getID(),
         msgSize, 0, this.nextEventsTime);
