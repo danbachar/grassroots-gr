@@ -1,0 +1,43 @@
+\documentclass[NET,english,beameralt]{tumbeamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage{packages}
+\usepackage{beamermods}
+\usepackage{adjustbox}
+\usepackage{attachfile}
+
+% For beamer mode (default):
+\author[D. Bachar]{Dan Bachar, \textnormal{David Guzman}}
+\title[Sparsity to Reliability]{Resilient decentralized communication for unstructured peer-to-peer networks\\ \small From Sparsity to Reliability: the Decentralized Path to Free Speech}
+
+\newdate{date}{26}{11}{2025}
+
+\usepackage{pgfpages}
+\usepackage{ifthen}
+% ============================================================================
+% jobname solution
+% ============================================================================
+\newif\ifsolution%
+\ifthenelse{\equal{\detokenize{notes}}{\jobname}}{%
+\setbeameroption{show notes on second screen=bottom}
+\setbeamercolor{note page}{bg=white, fg=black}
+\setbeamercolor{note title}{bg=white!95!black, fg=black}
+}{
+}
+
+% TeXLive 2018 compatibility: https://tex.stackexchange.com/questions/426088/texlive-pretest-2018-beamer-and-subfig-collide
+\makeatletter
+\let\@@magyar@captionfix\relax
+\makeatother
+
+
+\begin{document}
+\input{sections/intro}
+\input{sections/state}
+\input{sections/setup}
+\input{sections/evaluation}
+\input{sections/discussion}
+\input{sections/future}
+
+\end{document}
+

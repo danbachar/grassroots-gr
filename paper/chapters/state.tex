@@ -1,19 +1,12 @@
-To provide decentralized p2p communication, Delay-Tolerant Networking (DTN) moves away from traditional IP packet forwarding and using the the Store-Carry-Forward paradigm.~\cite{sami}, where hosts store messages while carrying them until another another node is reached which can then forward the messages.
-This paradigm enables the opportunistic usage of short-range wireless p2p communication protocols, to forward messages while the Internet infrastructure is unavailable, as presented with Twimight~\cite{twimight}.
-Twimight and most unstructured peer-to-peer networks usually rely on flooding and gossip for content dissemination, as recently exemplified with Amigo~\cite{amigo} and bitchat~\cite{bitchat}, as this type of networks typically do not store information about the cluster membership. 
-Flooding lies at the core of this research paper, as we measure the resilience and performance metrics for unstructured p2p social networks that are built using flooding, particularly important for wide neighbor discovery and content dissemination.
+% To provide decentralized p2p communication, Delay-Tolerant Networking (DTN) moves away from traditional IP packet forwarding and using the the Store-Carry-Forward paradigm.~\cite{dtn}, where hosts store messages while carrying them until another another node is reached which can then forward the messages.
+In this section we discuss the state-of-the-art of related works upon which this research builds, and deals with the question: how can centralization metrics be used to measure the resilience of unstructured p2p networks?
+
+Traditionally using standard IP packet forwarding, which requires an end-to-end connection between peers, p2p networks can opportunistically use short-range wireless p2p communication protocols to Store, Carry, and Forward~\cite{dtn} messages while the Internet infrastructure is unavailable, as presented with Twimight~\cite{twimight}.
+Twimight and most unstructured peer-to-peer networks usually rely on flooding and gossip for content dissemination, as these networks do not store information about the cluster membership. 
+Simulating an unstructured p2p network, our simulations similarly utilize flooding and gossip for neighbor discovery and content dissemination.
+The topologies and stochastics of the simulations are captured, processed, and their resilience measured using centralization metrics.
 To bring these concepts into the context of global-scale networks, we adapt centralization and sparsity metrics to measure the resilience of different network topologies at scale.
-The Centralization Score~$\mathscr{S}$~\cite{dependence} proposed by Habib et al. is derived from the Herfindahl-Hirschmann Index (HHI), which is used to measure market competition in US antitrust laws.
-The property we used to measure resilience is the node degree, or the number of connections a node has to other peers in the network topology.
-An overall similarity between individual node degrees increases the resilience of a topology, as network partitions affecting a subset of the nodes will not result in a complete blackout of the network because many alternative paths still exist.
-Habib study patterns of different web service providers in different countries around the world, and demonstrates how countries with higher centralization around a smaller number of website hosting providers are more susceptible to outages.
-Used in the paper to measure the centralization of common Internet services around a small number of providers, the Centralization Score~$\mathscr{S}$ is defined as follows:
-\[
-\mathscr{S} = \sum_{i=0}^n (\frac{a_i}{C})^2 - \frac{1}{C}
-\]
-where $C$ is the total number of websites considered, $a_i$ is the number of websites hosted by provider $i$, and $n$ is the total number of providers.
-In this paper, $C$ is defined as the total number of edges (i.e. network links), $a_i$ is the degree of node $i$, and $n$ is the total number of nodes.
-\begin{figure}[hbp]
+\begin{figure}[H]
   \centering
   \resizebox{0.5\textwidth}{!}{%
   \begin{tikzpicture}[
@@ -56,19 +49,36 @@ In this paper, $C$ is defined as the total number of edges (i.e. network links),
   }
   \caption{Sparse vs.~dense topologies}
 \end{figure}
-To sparsity: in their work, Hurley and Rickard compare different measures of sparsity~\cite{sparsity}, and rank different known sparsity measures according to six desirable criteria that a sparsity measure should trivially satisfy, most notably the Robin Hood axiom (`stealing from the rich and giving to the poor`: distributing the website hosting over multiple providers instead of hosting with single provider should reduce sparsity).
-Hurley et al.~prove that amongst the most common methods to measure sparsity, the Gini coefficient outperformed all other measurements, and satisfies all six criteria.
-The Gini coefficient, a metric commonly associated with the Human Development Index to measure income inequality around the world, is calculated as follows:
-\[
-G = \frac{\sum_{i=0}^n \sum_{j=0}^n |a_i - a_j|}{2n \sum_{i=0}^n a_i}
-\]
-Where $a_i$ is the degree of node $i$, and $n$ is the total number of nodes.
-Hurley and Rickard's work allows us to effectively use tried-and-tested economical metrics to measure the sparsity of the different simulation topologies.
-Finally, this paper compares the aforementioned metrics with the trivial L0 norm, which is calculated from the different topologies' node degrees followingly:
+% The property we used to measure resilience is the node degree, or the number of connections a node has to other peers in the network topology: an overall similarity between individual node degrees increases the resilience of a topology, as network partitions affecting a subset of the nodes will not result in a complete blackout of the network because many alternative paths still exist.
+To compute the different centralization metrics of our different topologies, we extract a (weighted) vector of node degrees from each topology, and compare the values of the different metrics derived from it.
+The first centralization metric used in this paper is the common reference metric: the $L_0$ norm, which simply counts the number of non-zero elements in a vector.
+The $L_0$ norm is calculated using the following formula:
 \[
 L_0 = \frac{\sum_{i=0}^n \begin{cases}
   1 & \text{if $a_i > 0$} \\
   0 & \text{otherwise}
 \end{cases}}{n}
 \]
-where $a_i$ is the node degree of node $i$, and $n$ is the total number of nodes.
+where $a_i$ is the degree of node $i$, and $n$ is the total number of nodes.
+
+The second centralization metric used in this paper is the Gini coefficient~\cite{sparsity}, which measures the overall inequality of a distribution, or sparsity: a small number of components in a distribution hold a large proportion of the overall value.
+Different measures of sparsity have been introduced and ranked according to fulfilling desirable criteria, that sparsity measures should logically satisfy~\cite{sparsity}.%, and rank different known sparsity measures according to six desirable criteria that a sparsity measure should trivially satisfy, most notably the Robin Hood axiom (`stealing from the rich and giving to the poor`: distributing the website hosting over multiple providers instead of hosting with single provider should reduce sparsity).
+%Hurley et al.~prove that amongst the most common methods to measure sparsity, the Gini coefficient outperformed all other measurements, and satisfies all six criteria.
+Amongst the most common methods to measure sparsity, the Gini coefficiengt outperformed all other measurements considered, satisfying all criteria.
+The Gini coefficient, a metric commonly associated with the Human Development Index to measure income inequality around the world, is calculated as follows:
+\[
+G = \frac{\sum_{i=0}^n \sum_{j=0}^n |a_i - a_j|}{2n \sum_{i=0}^n a_i}
+\]
+Where $a_i$ is the degree of node $i$, and $n$ is the total number of nodes.
+% Hurley and Rickard's work allows us to effectively use tried-and-tested economical metrics to measure the sparsity of the different simulation topologies.
+
+Lastly, the third metric we used is the  Centralization Score~$\mathscr{S}$~\cite{dependence}, which is derived from the Herfindahl-Hirschmann Index (HHI). The HHI index is used to measure market competition in US antitrust laws.
+In their work, Habib et al. study patterns of providing multiple web services in different countries around the world, and demonstrate how regions with higher centralization around a smaller number of providers are more susceptible to outages.
+The Centralization Score~$\mathscr{S}$ is defined as follows:
+\[
+\mathscr{S} = \sum_{i=0}^n (\frac{a_i}{C})^2 - \frac{1}{C}
+\]
+% where $C$ is the total number of websites considered, $a_i$ is the number of websites hosted by provider $i$, and $n$ is the total number of providers.
+where $C$ is the total number of edges (i.e. network links), $a_i$ is the degree of node $i$, and $n$ is the total number of nodes.
+% Finally, this paper compares the aforementioned metrics with the trivial L0 norm, which is calculated from the different topologies' node degrees followingly:
+Centralization metrics can be used to measure the resilience of unstructured p2p networks by capturing the inequality in the distribution of node degrees, and comparing different network topologies: we argue, that topologies with an overall more similar distribution of node degrees are inherently more resilience.

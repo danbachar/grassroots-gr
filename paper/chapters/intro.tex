@@ -11,7 +11,7 @@ Structured p2p networks usually require an expensive randomized approach to esta
 Popular blockchains, which use a structued p2p overlay, employ concentration of services in a few highly available nodes, poses a threat to resilience despite a high reliability of those nodes, as a single network partition can prevent the entire network from communicating~\cite{guzman24}.
 Other famous structured p2p networks include systems as Chord~\cite{chord}, Kademlia~\cite{kademlia}, and the InterPlanetary File System (IPFS)~\cite{ipfs}.
 Unstructured p2p networks, on the other hand, are more suitable for highly-dynamic alternative communication methods, often necessary to guarantee free decentralized communication means, as they usually do not distribute central information amongst the participating nodes.
-Most notably, the rise of unstructured p2p messaging platforms like Firechat~\cite{firechat}, Briar~\cite{briar}, and Amigo~\cite{amigo}, have proven that there is a growing shift in user interest patterns away from traditional Centralized Social Networks towards diverse p2p social networks.
+Most notably, the rise of unstructured p2p messaging platforms like Firechat~\cite{firechat}, Briar~\cite{briar}, bitchat~\cite{bitchat}, and Amigo~\cite{amigo}, have proven that there is a growing shift in user interest patterns away from traditional Centralized Social Networks towards diverse p2p social networks.
 
 After exploring the different types of p2p overlay networks, we discuss the choice of the communication protocol, which dictates the limited physical device communication radius.
 We chose to focus on a stable protocol that most modern devices support and the populace is most likely to use in disaster zones: Bluetooth, and more specifically Bluetooth Low Energy (BLE)~\cite{bt-spec}.
@@ -24,7 +24,9 @@ This paper provides the design space for resilient unstructured p2p networks, ba
     \caption{Sparse topology}
     \label{fig:centralization-sparse}
 \end{figure}
-To use sparsity, we defined the node degree as our characteristic. To illustrate, figure~\ref{fig:centralization-sparse} shows an increasingly sparse network topology, in which one node becomes increasingly dominant as it acumulates more network links, and more nodes poorly connected nodes are added.
+% To use sparsity, we defined the node degree as our characteristic.
+The property we used to measure resilience and sparsity is the node degree, or the number of connections a node has to other peers in the network topology: an overall similarity between individual node degrees increases the resilience of a topology, as network partitions affecting a subset of the nodes will not result in a complete blackout of the network because many alternative paths still exist.
+To illustrate, figure~\ref{fig:centralization-sparse} shows an increasingly sparse network topology, in which one node becomes increasingly dominant as it acumulates more network links, and more nodes poorly connected nodes are added.
 While the left plot simply shows the distribution of values, the right plot compares the different resilience scores that this paper uses: the Gini coefficient in green, and the Centralization score $\mathscr{S}$ in orange.
 
 \begin{figure}[H]
