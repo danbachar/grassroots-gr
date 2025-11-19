@@ -1,12 +1,73 @@
-from typing import Optional
+from typing import Any, Optional
 import pandas as pd
 import numpy as np
 import pickle
-from load_data import Message, Hop, HostInfo, Topology, Configuration # types needed otherwise the pickle load won't work
+from load_data import Message, Hop, HostInfo, Topology, Configuration, ConfigurationWithRun # types needed otherwise the pickle load won't work
 import os
 import matplotlib.pyplot as plt
+from collections import defaultdict
+class Metrics:
+    def __init__(self, mean_latency: np.floating[Any], gini: float, s_score: float) -> None:
+        self.mean_latency = mean_latency
+        self.gini = gini
+        self.s_score = s_score
 
-def calculate_gini_coefficient(values: list[float]) -> float:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Metrics):
+            return False
+        return self.mean_latency == other.mean_latency and self.gini == other.gini and self.s_score == other.s_score
+    
+    def __hash__(self) -> int:
+        return hash((self.mean_latency, self.gini, self.s_score))
+
+class TopologyForConfig:
+    def __init__(self, config: ConfigurationWithRun, topology: Topology) -> None:
+        self.config = config
+        self.topology = topology
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TopologyForConfig):
+            return False
+        return (self.config == other.config and 
+                self.topology == other.topology)
+    
+    def __hash__(self) -> int:
+        return hash((self.config, self.topology))
+class MetricsForTopology(TopologyForConfig):
+    mean_latency: np.floating[Any]
+    median_latency: np.floating[Any]
+    gini: float
+    s_score: float
+
+    def __init__(self, config: ConfigurationWithRun, topology: Topology, latencies: list[float]) -> None:
+        """ calculate metrics per config and resulting topology: metrics per mode, run, max degree, comms range (mean latency per config)"""
+        super().__init__(config, topology)
+
+        self.mean_latency = np.mean(latencies)
+        self.median_latency = np.median(latencies)
+        degrees_list: list[int] = []
+        for node_id in range(self.topology.get_number_of_nodes()):
+            node_degree = self.topology.get_node_degree(str(node_id))
+            degrees_list.append(node_degree)
+
+        self.gini = calculate_gini_coefficient(degrees_list)
+        num_links = self.topology.get_number_of_links()
+        self.s_score = calculate_centralization_score(degrees_list, num_links)     
+        self.mean_latency = np.mean(latencies)
+        
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, MetricsForTopology):
+            return False
+        return (self.mean_latency == other.mean_latency and 
+                self.median_latency == other.median_latency and 
+                self.gini == other.gini and 
+                self.s_score == other.s_score and 
+                super().__eq__(other))
+
+    def __hash__(self) -> int:
+        return hash((self.config, self.topology, self.mean_latency, self.median_latency, self.gini, self.s_score))
+
+def calculate_gini_coefficient(values: list[int]) -> float:
     """
     Calculate the Gini coefficient for a list of values.
     
@@ -29,19 +90,17 @@ def calculate_gini_coefficient(values: list[float]) -> float:
     n = len(sorted_values)
     
     # Calculate Gini coefficient
-    # Formula: G = (2 * sum(i * x_i)) / (n * sum(x_i)) - (n + 1) / n
+    # Formula: G = (2 * sum(i * x)) / (n * sum(x)) - (n + 1) / n
     cumsum = np.cumsum(sorted_values)
     total = cumsum[-1]
     
     if total == 0:
         return 0.0
     
-    # Gini = (2 * sum of (rank * value)) / (n * total) - (n + 1) / n
     gini = (2.0 * np.sum((np.arange(1, n + 1) * sorted_values))) / (n * total) - (n + 1.0) / n
-    
     return gini
 
-def calculate_centralization_score(node_degrees: list[float], num_links: int) -> float:
+def calculate_centralization_score(node_degrees: list[int], num_links: int) -> float:
     """
     Calculate the centralization score S for a distribution of node degrees.
     
@@ -65,7 +124,6 @@ def calculate_centralization_score(node_degrees: list[float], num_links: int) ->
 
     # Calculate S = sum((a_i / C)^2) - 1/C
     centralization = sum((a_i / C) ** 2 for a_i in degrees) - (1.0 / C)
-    
     return centralization
 
 def calculate_l0_norm(degrees: list[float]) -> float:
@@ -215,34 +273,28 @@ def plot_max_degree_vs_throughput(delivered_messages: list[Message]):
     """Plot maximum allowed node degree vs achieved throughput, with one curve per communication radius: """
     
     # Group by communication_range and max_degree
-    throughput_data = {}
+    throughput_data: dict[Configuration, list[float]] = defaultdict(list)
     for msg in delivered_messages:
-        key = (msg.mode, msg.communication_range, msg.max_degree)
+        key = Configuration(mode=msg.mode, range=msg.communication_range, max_degree=msg.max_degree, run_randomize_seed=1)
         if key not in throughput_data:
             throughput_data[key] = []
-        if msg.delivery_time > 0:
+        # if msg.delivery_time > 0:
             throughput = msg.size / msg.delivery_time
             throughput_data[key].append(throughput)
     
     # Calculate Mean throughput per group
-    modes = sorted(set(k[0] for k in throughput_data.keys()))
-    ranges = sorted(set(k[1] for k in throughput_data.keys()))
-    max_degrees = sorted(set(k[2] for k in throughput_data.keys()))
+    modes = sorted(set(k.mode for k in throughput_data.keys()))
+    ranges = sorted(set(k.range for k in throughput_data.keys()))
+    max_degrees = sorted(set(k.max_degree for k in throughput_data.keys()))
     
 
     for mode in modes:
         for comm_range in ranges:
-            available_degrees = [k[2] for k in throughput_data.keys() 
-                            if k[0] == mode and k[1] == comm_range]
+            available_degrees = [k.max_degree for k in throughput_data.keys() 
+                            if k.mode == mode and k.range == comm_range]
             print(f"Mode {mode}, Range {comm_range}m: degrees {sorted(set(available_degrees))}")
-            
-            # Debug: check which degrees have actual throughput data (non-empty lists)
-            degrees_with_data = [k[2] for k in throughput_data.keys() 
-                               if k[0] == mode and k[1] == comm_range and throughput_data[k]]
-            if sorted(set(available_degrees)) != sorted(set(degrees_with_data)):
-                print(f"  -> But only these have non-empty data: {sorted(set(degrees_with_data))}")
 
-    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    colors: list[str] = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
     
     # Create vertical layout (2 rows, 1 column)
@@ -301,585 +353,585 @@ def plot_max_degree_vs_throughput(delivered_messages: list[Message]):
     plt.savefig('figures/max_degree_vs_throughput.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: dict[Configuration, Topology]):
-    """
-    Plot Gini coefficient, centralization score, and L0 norm vs max node degree,
-    split by mode (intra/inter-cluster), with one curve for each communication range.
+# def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
+#     """
+#     Plot Gini coefficient, centralization score, and L0 norm vs max node degree,
+#     split by mode (intra/inter-cluster), with one curve for each communication range.
     
-    Each randomized run is treated as an individual data point, showing the natural
-    variation in centralization metrics across different random topologies.
+#     Each randomized run is treated as an individual data point, showing the natural
+#     variation in centralization metrics across different random topologies.
     
-    Creates 6 subplots (3x2 grid):
-    - Top row: Gini coefficient (intra, inter)
-    - Middle row: Centralization score S (intra, inter)
-    - Bottom row: L0 norm / sparsity (intra, inter)
-    """
-    TOTAL_NODES = 72
+#     Creates 6 subplots (3x2 grid):
+#     - Top row: Gini coefficient (intra, inter)
+#     - Middle row: Centralization score S (intra, inter)
+#     - Bottom row: L0 norm / sparsity (intra, inter)
+#     """
+#     TOTAL_NODES = 72
     
-    # Get all available runs with randomized topologies
-    randomized_runs = sorted(set(
-        config.run_number 
-        for config in topologies.keys() 
-        if config.run_randomize_seed == 1
-    ))
+#     # Get all available runs with randomized topologies
+#     randomized_runs = sorted(set(
+#         config.run_number 
+#         for config in topologies.keys() 
+#         if config.run_randomize_seed == 1
+#     ))
     
-    if not randomized_runs:
-        print("Warning: No randomized topologies found. Falling back to non-randomized (run=1).")
-        randomized_runs = [1]
+#     if not randomized_runs:
+#         print("Warning: No randomized topologies found. Falling back to non-randomized (run=1).")
+#         randomized_runs = [1]
     
-    # Collect individual data points (one per run)
-    data_points = []
+#     # Collect individual data points (one per run)
+#     data_points = []
     
-    config_keys = set()
-    for msg in delivered_messages:
-        config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
+#     config_keys = set()
+#     for msg in delivered_messages:
+#         config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
     
-    for mode, comm_range, max_deg in config_keys:
-        for run_num in randomized_runs:
-            config = Configuration(
-                run_number=run_num, 
-                range=comm_range, 
-                max_degree=max_deg, 
-                mode=mode,
-                run_randomize_seed=1
-            )
-            topology = topologies.get(config)
+#     for mode, comm_range, max_deg in config_keys:
+#         for run_num in randomized_runs:
+#             config = ConfigurationWithRun(
+#                 run_number=run_num, 
+#                 range=comm_range, 
+#                 max_degree=max_deg, 
+#                 mode=mode,
+#                 run_randomize_seed=1
+#             )
+#             topology = topologies.get(config)
             
-            if topology is None:
-                continue
+#             if topology is None:
+#                 continue
             
-            # Extract degrees for ALL nodes from the topology
-            degrees_list = []
-            for node_id in range(TOTAL_NODES):
-                node_name = str(node_id)
-                if node_name in topology.connections:
-                    degrees_list.append(len(topology.connections[node_name]))
-                else:
-                    degrees_list.append(0)  # Isolated node
+#             # Extract degrees for ALL nodes from the topology
+#             degrees_list = []
+#             for node_id in range(TOTAL_NODES):
+#                 node_name = str(node_id)
+#                 if node_name in topology.connections:
+#                     degrees_list.append(len(topology.connections[node_name]))
+#                 else:
+#                     degrees_list.append(0)  # Isolated node
             
-            # Calculate all metrics for this run
-            gini_coef = calculate_gini_coefficient(degrees_list)
-            num_links = topology.get_number_of_links()
-            s_score = calculate_centralization_score(degrees_list, num_links)
-            l0_norm = calculate_l0_norm(degrees_list)
+#             # Calculate all metrics for this run
+#             gini_coef = calculate_gini_coefficient(degrees_list)
+#             num_links = topology.get_number_of_links()
+#             s_score = calculate_centralization_score(degrees_list, num_links)
+#             l0_norm = calculate_l0_norm(degrees_list)
             
-            data_points.append({
-                'mode': mode,
-                'comm_range': comm_range,
-                'max_degree': max_deg,
-                'run': run_num,
-                'gini': gini_coef,
-                's_score': s_score,
-                'l0_norm': l0_norm
-            })
+#             data_points.append({
+#                 'mode': mode,
+#                 'comm_range': comm_range,
+#                 'max_degree': max_deg,
+#                 'run': run_num,
+#                 'gini': gini_coef,
+#                 's_score': s_score,
+#                 'l0_norm': l0_norm
+#             })
     
-    modes = sorted(set(d['mode'] for d in data_points))
-    ranges = sorted(set(d['comm_range'] for d in data_points))
-    max_degrees = sorted(set(d['max_degree'] for d in data_points))
-    modes = sorted(set(d['mode'] for d in data_points))
-    ranges = sorted(set(d['comm_range'] for d in data_points))
-    max_degrees = sorted(set(d['max_degree'] for d in data_points))
+#     modes = sorted(set(d['mode'] for d in data_points))
+#     ranges = sorted(set(d['comm_range'] for d in data_points))
+#     max_degrees = sorted(set(d['max_degree'] for d in data_points))
+#     modes = sorted(set(d['mode'] for d in data_points))
+#     ranges = sorted(set(d['comm_range'] for d in data_points))
+#     max_degrees = sorted(set(d['max_degree'] for d in data_points))
     
-    # Create 3x2 subplot grid
-    fig, axes = plt.subplots(3, 2, figsize=(16, 18))
+#     # Create 3x2 subplot grid
+#     fig, axes = plt.subplots(3, 2, figsize=(16, 18))
     
-    mode_names = {0: 'Intra-cluster', 1: 'Inter-cluster'}
-    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
-    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+#     mode_names = {0: 'Intra-cluster', 1: 'Inter-cluster'}
+#     colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+#     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
     
-    # Plot Gini coefficient (top row)
-    for mode_idx, mode in enumerate(modes):
-        ax = axes[0, mode_idx]
+#     # Plot Gini coefficient (top row)
+#     for mode_idx, mode in enumerate(modes):
+#         ax = axes[0, mode_idx]
         
-        for range_idx, comm_range in enumerate(ranges):
-            # Filter points for this mode and range
-            points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+#         for range_idx, comm_range in enumerate(ranges):
+#             # Filter points for this mode and range
+#             points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
             
-            if not points:
-                continue
+#             if not points:
+#                 continue
             
-            # Group by max_degree
-            degree_groups = {}
-            for point in points:
-                max_deg = point['max_degree']
-                if max_deg not in degree_groups:
-                    degree_groups[max_deg] = []
-                degree_groups[max_deg].append(point['gini'])
+#             # Group by max_degree
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['gini'])
             
-            # Calculate statistics for each max_degree
-            x_vals = []
-            y_vals = []
-            y_stds = []
+#             # Calculate statistics for each max_degree
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
             
-            for max_deg in sorted(degree_groups.keys()):
-                x_vals.append(max_deg)
-                y_vals.append(np.mean(degree_groups[max_deg]))
-                y_stds.append(np.std(degree_groups[max_deg]))
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=8,
-                           linewidth=2,
-                           capsize=5,
-                           capthick=2,
-                           label=f'{int(comm_range)}m range',
-                           color=colors[range_idx])
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors[range_idx])
         
-        ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-        ax.set_ylabel('Gini Coefficient', fontsize=12)
-        ax.set_title(f'Gini Coefficient', fontsize=14)
-        ax.set_ylim(0, 1)  # Gini coefficient ranges from 0 to 1
-        ax.grid(True, alpha=0.3)
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Gini Coefficient', fontsize=12)
+#         ax.set_title(f'Gini Coefficient', fontsize=14)
+#         ax.set_ylim(0, 1)  # Gini coefficient ranges from 0 to 1
+#         ax.grid(True, alpha=0.3)
     
-    # Plot Centralization Score (middle row)
-    for mode_idx, mode in enumerate(modes):
-        ax = axes[1, mode_idx]
+#     # Plot Centralization Score (middle row)
+#     for mode_idx, mode in enumerate(modes):
+#         ax = axes[1, mode_idx]
         
-        for range_idx, comm_range in enumerate(ranges):
-            # Filter points for this mode and range
-            points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+#         for range_idx, comm_range in enumerate(ranges):
+#             # Filter points for this mode and range
+#             points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
             
-            if not points:
-                continue
+#             if not points:
+#                 continue
             
-            # Group by max_degree
-            degree_groups = {}
-            for point in points:
-                max_deg = point['max_degree']
-                if max_deg not in degree_groups:
-                    degree_groups[max_deg] = []
-                degree_groups[max_deg].append(point['s_score'])
+#             # Group by max_degree
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['s_score'])
             
-            # Calculate statistics for each max_degree
-            x_vals = []
-            y_vals = []
-            y_stds = []
+#             # Calculate statistics for each max_degree
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
             
-            for max_deg in sorted(degree_groups.keys()):
-                x_vals.append(max_deg)
-                y_vals.append(np.mean(degree_groups[max_deg]))
-                y_stds.append(np.std(degree_groups[max_deg]))
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=8,
-                           linewidth=2,
-                           capsize=5,
-                           capthick=2,
-                           label=f'{int(comm_range)}m range',
-                           color=colors[range_idx])
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors[range_idx])
         
-        ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-        ax.set_ylabel('Centralization Score S', fontsize=12)
-        ax.set_title(f'Centralization Score', fontsize=14)
-        ax.grid(True, alpha=0.3)
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Centralization Score S', fontsize=12)
+#         ax.set_title(f'Centralization Score', fontsize=14)
+#         ax.grid(True, alpha=0.3)
     
-    # Plot L0 Norm (bottom row)
-    for mode_idx, mode in enumerate(modes):
-        ax = axes[2, mode_idx]
+#     # Plot L0 Norm (bottom row)
+#     for mode_idx, mode in enumerate(modes):
+#         ax = axes[2, mode_idx]
         
-        for range_idx, comm_range in enumerate(ranges):
-            # Filter points for this mode and range
-            points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+#         for range_idx, comm_range in enumerate(ranges):
+#             # Filter points for this mode and range
+#             points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
             
-            if not points:
-                continue
+#             if not points:
+#                 continue
             
-            # Group by max_degree
-            degree_groups = {}
-            for point in points:
-                max_deg = point['max_degree']
-                if max_deg not in degree_groups:
-                    degree_groups[max_deg] = []
-                degree_groups[max_deg].append(point['l0_norm'])
+#             # Group by max_degree
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['l0_norm'])
             
-            # Calculate statistics for each max_degree
-            x_vals = []
-            y_vals = []
-            y_stds = []
+#             # Calculate statistics for each max_degree
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
             
-            for max_deg in sorted(degree_groups.keys()):
-                x_vals.append(max_deg)
-                y_vals.append(np.mean(degree_groups[max_deg]))
-                y_stds.append(np.std(degree_groups[max_deg]))
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=8,
-                           linewidth=2,
-                           capsize=5,
-                           capthick=2,
-                           label=f'{int(comm_range)}m range',
-                           color=colors[range_idx])
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors[range_idx])
         
-        ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-        ax.set_ylabel('L0 Norm (Active Node Ratio)', fontsize=12)
-        ax.set_title(f'Network Sparsity (L0)', fontsize=14)
-        ax.set_ylim(0, 1.05)  # L0 ratio ranges from 0 to 1
-        ax.grid(True, alpha=0.3)
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('L0 Norm (Active Node Ratio)', fontsize=12)
+#         ax.set_title(f'Network Sparsity (L0)', fontsize=14)
+#         ax.set_ylim(0, 1.05)  # L0 ratio ranges from 0 to 1
+#         ax.grid(True, alpha=0.3)
     
-    # Add shared legend below all subplots
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
-               ncol=min(len(labels), 5), fontsize=11, frameon=True)
+#     # Add shared legend below all subplots
+#     handles, labels = axes[0, 0].get_legend_handles_labels()
+#     fig.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
+#                ncol=min(len(labels), 5), fontsize=11, frameon=True)
     
-    plt.tight_layout(rect=[0, 0.03, 1, 1])
+#     plt.tight_layout(rect=[0, 0.03, 1, 1])
 
-    # Split versions by distance range
-    low_ranges = [r for r in ranges if r <= 40]
-    high_ranges = [r for r in ranges if r >= 50]
+#     # Split versions by distance range
+#     low_ranges = [r for r in ranges if r <= 40]
+#     high_ranges = [r for r in ranges if r >= 50]
     
-    # Function to plot for a specific distance range
-    def plot_for_distance_range(distance_ranges, range_label, filename_suffix, use_log_gini=False):
-        """Helper function to create plots for a specific distance range
+#     # Function to plot for a specific distance range
+#     def plot_for_distance_range(distance_ranges, range_label, filename_suffix, use_log_gini=False):
+#         """Helper function to create plots for a specific distance range
         
-        Args:
-            distance_ranges: List of communication ranges to plot
-            range_label: Label for the distance range (e.g., "Low Distances: ≤40m")
-            filename_suffix: Suffix for the output filename (e.g., "low_dist")
-            use_log_gini: If True, use log scale for Gini coefficient y-axis
-        """
-        if not distance_ranges:
-            return
+#         Args:
+#             distance_ranges: List of communication ranges to plot
+#             range_label: Label for the distance range (e.g., "Low Distances: ≤40m")
+#             filename_suffix: Suffix for the output filename (e.g., "low_dist")
+#             use_log_gini: If True, use log scale for Gini coefficient y-axis
+#         """
+#         if not distance_ranges:
+#             return
             
-        colors_local = plt.cm.viridis(np.linspace(0, 1, len(distance_ranges)))
+#         colors_local = plt.cm.viridis(np.linspace(0, 1, len(distance_ranges)))
         
-        # Plot 1: All metrics (3x2 grid) for this distance range
-        fig1, axes1 = plt.subplots(3, 2, figsize=(16, 18))
+#         # Plot 1: All metrics (3x2 grid) for this distance range
+#         fig1, axes1 = plt.subplots(3, 2, figsize=(16, 18))
         
-        # Gini coefficient (top row)
-        for mode_idx, mode in enumerate(modes):
-            ax = axes1[0, mode_idx]
+#         # Gini coefficient (top row)
+#         for mode_idx, mode in enumerate(modes):
+#             ax = axes1[0, mode_idx]
             
-            for range_idx, comm_range in enumerate(distance_ranges):
-                points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+#             for range_idx, comm_range in enumerate(distance_ranges):
+#                 points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
                 
-                if not points:
-                    continue
+#                 if not points:
+#                     continue
                 
-                degree_groups = {}
-                for point in points:
-                    max_deg = point['max_degree']
-                    if max_deg not in degree_groups:
-                        degree_groups[max_deg] = []
-                    degree_groups[max_deg].append(point['gini'])
+#                 degree_groups = {}
+#                 for point in points:
+#                     max_deg = point['max_degree']
+#                     if max_deg not in degree_groups:
+#                         degree_groups[max_deg] = []
+#                     degree_groups[max_deg].append(point['gini'])
                 
-                x_vals = []
-                y_vals = []
-                y_stds = []
+#                 x_vals = []
+#                 y_vals = []
+#                 y_stds = []
                 
-                for max_deg in sorted(degree_groups.keys()):
-                    x_vals.append(max_deg)
-                    y_vals.append(np.mean(degree_groups[max_deg]))
-                    y_stds.append(np.std(degree_groups[max_deg]))
+#                 for max_deg in sorted(degree_groups.keys()):
+#                     x_vals.append(max_deg)
+#                     y_vals.append(np.mean(degree_groups[max_deg]))
+#                     y_stds.append(np.std(degree_groups[max_deg]))
                 
-                if x_vals:
-                    ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                               marker=markers[range_idx % len(markers)], 
-                               markersize=8,
-                               linewidth=2,
-                               capsize=5,
-                               capthick=2,
-                               label=f'{int(comm_range)}m range',
-                               color=colors_local[range_idx])
+#                 if x_vals:
+#                     ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                                marker=markers[range_idx % len(markers)], 
+#                                markersize=8,
+#                                linewidth=2,
+#                                capsize=5,
+#                                capthick=2,
+#                                label=f'{int(comm_range)}m range',
+#                                color=colors_local[range_idx])
             
-            ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-            ax.set_ylabel('Gini Coefficient', fontsize=12)
-            ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
-            if use_log_gini:
-                ax.set_yscale('log')
-                ax.set_ylim(0.001, 1)
-            else:
-                ax.set_ylim(0, 1)
-            ax.grid(True, alpha=0.3)
+#             ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#             ax.set_ylabel('Gini Coefficient', fontsize=12)
+#             ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
+#             if use_log_gini:
+#                 ax.set_yscale('log')
+#                 ax.set_ylim(0.001, 1)
+#             else:
+#                 ax.set_ylim(0, 1)
+#             ax.grid(True, alpha=0.3)
         
-        # Centralization Score (middle row)
-        for mode_idx, mode in enumerate(modes):
-            ax = axes1[1, mode_idx]
+#         # Centralization Score (middle row)
+#         for mode_idx, mode in enumerate(modes):
+#             ax = axes1[1, mode_idx]
             
-            for range_idx, comm_range in enumerate(distance_ranges):
-                points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+#             for range_idx, comm_range in enumerate(distance_ranges):
+#                 points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
                 
-                if not points:
-                    continue
+#                 if not points:
+#                     continue
                 
-                degree_groups = {}
-                for point in points:
-                    max_deg = point['max_degree']
-                    if max_deg not in degree_groups:
-                        degree_groups[max_deg] = []
-                    degree_groups[max_deg].append(point['s_score'])
+#                 degree_groups = {}
+#                 for point in points:
+#                     max_deg = point['max_degree']
+#                     if max_deg not in degree_groups:
+#                         degree_groups[max_deg] = []
+#                     degree_groups[max_deg].append(point['s_score'])
                 
-                x_vals = []
-                y_vals = []
-                y_stds = []
+#                 x_vals = []
+#                 y_vals = []
+#                 y_stds = []
                 
-                for max_deg in sorted(degree_groups.keys()):
-                    x_vals.append(max_deg)
-                    y_vals.append(np.mean(degree_groups[max_deg]))
-                    y_stds.append(np.std(degree_groups[max_deg]))
+#                 for max_deg in sorted(degree_groups.keys()):
+#                     x_vals.append(max_deg)
+#                     y_vals.append(np.mean(degree_groups[max_deg]))
+#                     y_stds.append(np.std(degree_groups[max_deg]))
                 
-                if x_vals:
-                    ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                               marker=markers[range_idx % len(markers)], 
-                               markersize=8,
-                               linewidth=2,
-                               capsize=5,
-                               capthick=2,
-                               label=f'{int(comm_range)}m range',
-                               color=colors_local[range_idx])
+#                 if x_vals:
+#                     ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                                marker=markers[range_idx % len(markers)], 
+#                                markersize=8,
+#                                linewidth=2,
+#                                capsize=5,
+#                                capthick=2,
+#                                label=f'{int(comm_range)}m range',
+#                                color=colors_local[range_idx])
             
-            ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-            ax.set_ylabel('Centralization Score S', fontsize=12)
-            ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
-            ax.grid(True, alpha=0.3)
+#             ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#             ax.set_ylabel('Centralization Score S', fontsize=12)
+#             ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
+#             ax.grid(True, alpha=0.3)
         
-        # L0 Norm (bottom row)
-        for mode_idx, mode in enumerate(modes):
-            ax = axes1[2, mode_idx]
+#         # L0 Norm (bottom row)
+#         for mode_idx, mode in enumerate(modes):
+#             ax = axes1[2, mode_idx]
             
-            for range_idx, comm_range in enumerate(distance_ranges):
-                points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+#             for range_idx, comm_range in enumerate(distance_ranges):
+#                 points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
                 
-                if not points:
-                    continue
+#                 if not points:
+#                     continue
                 
-                degree_groups = {}
-                for point in points:
-                    max_deg = point['max_degree']
-                    if max_deg not in degree_groups:
-                        degree_groups[max_deg] = []
-                    degree_groups[max_deg].append(point['l0_norm'])
+#                 degree_groups = {}
+#                 for point in points:
+#                     max_deg = point['max_degree']
+#                     if max_deg not in degree_groups:
+#                         degree_groups[max_deg] = []
+#                     degree_groups[max_deg].append(point['l0_norm'])
                 
-                x_vals = []
-                y_vals = []
-                y_stds = []
+#                 x_vals = []
+#                 y_vals = []
+#                 y_stds = []
                 
-                for max_deg in sorted(degree_groups.keys()):
-                    x_vals.append(max_deg)
-                    y_vals.append(np.mean(degree_groups[max_deg]))
-                    y_stds.append(np.std(degree_groups[max_deg]))
+#                 for max_deg in sorted(degree_groups.keys()):
+#                     x_vals.append(max_deg)
+#                     y_vals.append(np.mean(degree_groups[max_deg]))
+#                     y_stds.append(np.std(degree_groups[max_deg]))
                 
-                if x_vals:
-                    ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                               marker=markers[range_idx % len(markers)], 
-                               markersize=8,
-                               linewidth=2,
-                               capsize=5,
-                               capthick=2,
-                               label=f'{int(comm_range)}m range',
-                               color=colors_local[range_idx])
+#                 if x_vals:
+#                     ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                                marker=markers[range_idx % len(markers)], 
+#                                markersize=8,
+#                                linewidth=2,
+#                                capsize=5,
+#                                capthick=2,
+#                                label=f'{int(comm_range)}m range',
+#                                color=colors_local[range_idx])
             
-            ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-            ax.set_ylabel('L0 Norm (Active Node Ratio)', fontsize=12)
-            ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
-            ax.set_ylim(0, 1.05)
-            ax.grid(True, alpha=0.3)
+#             ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#             ax.set_ylabel('L0 Norm (Active Node Ratio)', fontsize=12)
+#             ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
+#             ax.set_ylim(0, 1.05)
+#             ax.grid(True, alpha=0.3)
 
-        # Add shared legend below all subplots
-        handles, labels = axes1[0, 0].get_legend_handles_labels()
-        fig1.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
-                   ncol=min(len(labels), 5), fontsize=11, frameon=True)
+#         # Add shared legend below all subplots
+#         handles, labels = axes1[0, 0].get_legend_handles_labels()
+#         fig1.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
+#                    ncol=min(len(labels), 5), fontsize=11, frameon=True)
 
-        plt.tight_layout(rect=[0, 0.03, 1, 1])
-        plt.savefig(f'figures/centralization_metrics_vs_max_degree_all_metrics_{filename_suffix}.png', 
-                    dpi=300, bbox_inches='tight')
-        plt.close()
+#         plt.tight_layout(rect=[0, 0.03, 1, 1])
+#         plt.savefig(f'figures/centralization_metrics_vs_max_degree_all_metrics_{filename_suffix}.png', 
+#                     dpi=300, bbox_inches='tight')
+#         plt.close()
         
-        # Plot 2: Intra-cluster only (Gini + S-score)
-        fig2, axes2 = plt.subplots(2, 1, figsize=(5, 7))
+#         # Plot 2: Intra-cluster only (Gini + S-score)
+#         fig2, axes2 = plt.subplots(2, 1, figsize=(5, 7))
         
-        # Gini coefficient
-        ax = axes2[0]
-        for range_idx, comm_range in enumerate(distance_ranges):
-            points = [d for d in data_points if d['mode'] == 0 and d['comm_range'] == comm_range]
+#         # Gini coefficient
+#         ax = axes2[0]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 0 and d['comm_range'] == comm_range]
             
-            if not points:
-                continue
+#             if not points:
+#                 continue
             
-            degree_groups = {}
-            for point in points:
-                max_deg = point['max_degree']
-                if max_deg not in degree_groups:
-                    degree_groups[max_deg] = []
-                degree_groups[max_deg].append(point['gini'])
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['gini'])
             
-            x_vals = []
-            y_vals = []
-            y_stds = []
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
             
-            for max_deg in sorted(degree_groups.keys()):
-                x_vals.append(max_deg)
-                y_vals.append(np.mean(degree_groups[max_deg]))
-                y_stds.append(np.std(degree_groups[max_deg]))
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=8,
-                           linewidth=2,
-                           capsize=5,
-                           capthick=2,
-                           label=f'{int(comm_range)}m range',
-                           color=colors_local[range_idx])
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
         
-        ax.set_ylabel('Gini Coefficient', fontsize=12)
+#         ax.set_ylabel('Gini Coefficient', fontsize=12)
         
-        if use_log_gini:
-            ax.set_yscale('log')
-            ax.set_ylim(0.001, 1)
-        else:
-            ax.set_ylim(0, 1)
-        ax.grid(True, alpha=0.3)
+#         if use_log_gini:
+#             ax.set_yscale('log')
+#             ax.set_ylim(0.001, 1)
+#         else:
+#             ax.set_ylim(0, 1)
+#         ax.grid(True, alpha=0.3)
         
-        # S-score
-        ax = axes2[1]
-        for range_idx, comm_range in enumerate(distance_ranges):
-            points = [d for d in data_points if d['mode'] == 0 and d['comm_range'] == comm_range]
+#         # S-score
+#         ax = axes2[1]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 0 and d['comm_range'] == comm_range]
             
-            if not points:
-                continue
+#             if not points:
+#                 continue
             
-            degree_groups = {}
-            for point in points:
-                max_deg = point['max_degree']
-                if max_deg not in degree_groups:
-                    degree_groups[max_deg] = []
-                degree_groups[max_deg].append(point['s_score'])
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['s_score'])
             
-            x_vals = []
-            y_vals = []
-            y_stds = []
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
             
-            for max_deg in sorted(degree_groups.keys()):
-                x_vals.append(max_deg)
-                y_vals.append(np.mean(degree_groups[max_deg]))
-                y_stds.append(np.std(degree_groups[max_deg]))
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=8,
-                           linewidth=2,
-                           capsize=5,
-                           capthick=2,
-                           label=f'{int(comm_range)}m range',
-                           color=colors_local[range_idx])
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
         
-        ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-        ax.set_ylabel('Centralization Score S', fontsize=12)
-        ax.grid(True, alpha=0.3)
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Centralization Score S', fontsize=12)
+#         ax.grid(True, alpha=0.3)
         
-        # Add shared legend below the plots
-        handles, labels = axes2[1].get_legend_handles_labels()
-        fig2.legend(handles, labels, loc='lower center', ncol=min(len(labels), 4), 
-                   bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
+#         # Add shared legend below the plots
+#         handles, labels = axes2[1].get_legend_handles_labels()
+#         fig2.legend(handles, labels, loc='lower center', ncol=min(len(labels), 4), 
+#                    bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
         
-        plt.tight_layout(rect=[0, 0.03, 1, 1])
-        plt.savefig(f'figures/centralization_metrics_vs_max_degree_intra_{filename_suffix}.png', 
-                    dpi=300, bbox_inches='tight')
-        plt.close()
+#         plt.tight_layout(rect=[0, 0.03, 1, 1])
+#         plt.savefig(f'figures/centralization_metrics_vs_max_degree_intra_{filename_suffix}.png', 
+#                     dpi=300, bbox_inches='tight')
+#         plt.close()
         
-        # Plot 3: Inter-cluster only (Gini + S-score)
-        fig3, axes3 = plt.subplots(2, 1, figsize=(5, 9))
+#         # Plot 3: Inter-cluster only (Gini + S-score)
+#         fig3, axes3 = plt.subplots(2, 1, figsize=(5, 9))
         
-        # Gini coefficient
-        ax = axes3[0]
-        for range_idx, comm_range in enumerate(distance_ranges):
-            points = [d for d in data_points if d['mode'] == 1 and d['comm_range'] == comm_range]
+#         # Gini coefficient
+#         ax = axes3[0]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 1 and d['comm_range'] == comm_range]
             
-            if not points:
-                continue
+#             if not points:
+#                 continue
             
-            degree_groups = {}
-            for point in points:
-                max_deg = point['max_degree']
-                if max_deg not in degree_groups:
-                    degree_groups[max_deg] = []
-                degree_groups[max_deg].append(point['gini'])
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['gini'])
             
-            x_vals = []
-            y_vals = []
-            y_stds = []
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
             
-            for max_deg in sorted(degree_groups.keys()):
-                x_vals.append(max_deg)
-                y_vals.append(np.mean(degree_groups[max_deg]))
-                y_stds.append(np.std(degree_groups[max_deg]))
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=8,
-                           linewidth=2,
-                           capsize=5,
-                           capthick=2,
-                           label=f'{int(comm_range)}m range',
-                           color=colors_local[range_idx])
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
         
-        ax.set_ylabel('Gini Coefficient', fontsize=12)
+#         ax.set_ylabel('Gini Coefficient', fontsize=12)
         
-        if use_log_gini:
-            ax.set_yscale('log')
-            ax.set_ylim(0.001, 1)
-        else:
-            ax.set_ylim(0, 1)
-        ax.grid(True, alpha=0.3)
+#         if use_log_gini:
+#             ax.set_yscale('log')
+#             ax.set_ylim(0.001, 1)
+#         else:
+#             ax.set_ylim(0, 1)
+#         ax.grid(True, alpha=0.3)
         
-        # S-score
-        ax = axes3[1]
-        for range_idx, comm_range in enumerate(distance_ranges):
-            points = [d for d in data_points if d['mode'] == 1 and d['comm_range'] == comm_range]
+#         # S-score
+#         ax = axes3[1]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 1 and d['comm_range'] == comm_range]
             
-            if not points:
-                continue
+#             if not points:
+#                 continue
             
-            degree_groups = {}
-            for point in points:
-                max_deg = point['max_degree']
-                if max_deg not in degree_groups:
-                    degree_groups[max_deg] = []
-                degree_groups[max_deg].append(point['s_score'])
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['s_score'])
             
-            x_vals = []
-            y_vals = []
-            y_stds = []
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
             
-            for max_deg in sorted(degree_groups.keys()):
-                x_vals.append(max_deg)
-                y_vals.append(np.mean(degree_groups[max_deg]))
-                y_stds.append(np.std(degree_groups[max_deg]))
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
             
-            if x_vals:
-                ax.errorbar(x_vals, y_vals, yerr=y_stds,
-                           marker=markers[range_idx % len(markers)], 
-                           markersize=8,
-                           linewidth=2,
-                           capsize=5,
-                           capthick=2,
-                           label=f'{int(comm_range)}m range',
-                           color=colors_local[range_idx])
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
         
-        ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
-        ax.set_ylabel('Centralization Score S', fontsize=12)
-        ax.grid(True, alpha=0.3)
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Centralization Score S', fontsize=12)
+#         ax.grid(True, alpha=0.3)
         
-        # Add shared legend below the plots
-        handles, labels = axes3[1].get_legend_handles_labels()
-        fig3.legend(handles, labels, loc='lower center', ncol=min(len(labels), 3), 
-                   bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
+#         # Add shared legend below the plots
+#         handles, labels = axes3[1].get_legend_handles_labels()
+#         fig3.legend(handles, labels, loc='lower center', ncol=min(len(labels), 3), 
+#                    bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
         
-        plt.tight_layout(rect=[0, 0.03, 1, 1])
-        plt.savefig(f'figures/centralization_metrics_vs_max_degree_inter_{filename_suffix}.png', 
-                    dpi=300, bbox_inches='tight')
-        plt.close()
-        # GOOD PLOT
+#         plt.tight_layout(rect=[0, 0.03, 1, 1])
+#         plt.savefig(f'figures/centralization_metrics_vs_max_degree_inter_{filename_suffix}.png', 
+#                     dpi=300, bbox_inches='tight')
+#         plt.close()
+#         # GOOD PLOT
     
-    plot_for_distance_range(low_ranges, "Low Distances: ≤40m", "low_dist", use_log_gini=False)
-    plot_for_distance_range(high_ranges, "High Distances: 50-100m", "high_dist", use_log_gini=False)
+#     plot_for_distance_range(low_ranges, "Low Distances: ≤40m", "low_dist", use_log_gini=False)
+#     plot_for_distance_range(high_ranges, "High Distances: 50-100m", "high_dist", use_log_gini=False)
 
 def plot_max_degree_vs_throughput_run_comparison(delivered_messages: list[Message], n: int = 20):
     """
@@ -898,7 +950,7 @@ def plot_max_degree_vs_throughput_run_comparison(delivered_messages: list[Messag
         if run not in runs_data:
             runs_data[run] = []
         
-        if msg.delivery_time > 0:
+        # if msg.delivery_time > 0:
             throughput = msg.size / msg.delivery_time
             runs_data[run].append({
                 'max_degree': msg.max_degree,
@@ -1146,11 +1198,12 @@ def plot_message_delivery_distribution(all_messages: list[Message], delivered_me
     ax2.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
-    plt.savefig('figures/message_distance_distribution.png', 
-                bbox_inches='tight', dpi=300)
+    fpath = 'figures/message_distance_distribution.png'
+    plt.savefig(fpath, bbox_inches='tight', dpi=300)
+    print(f"Saved message distance distribution plot to {fpath}")
     plt.close()
 
-def plot_centralization_vs_delivery(all_messages: list[Message], delivered_messages: list[Message], topologies: dict[Configuration, Topology], time_threshold: float = 240.0):
+def plot_centralization_vs_delivery(all_messages: list[Message], delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology], time_threshold: float = 240.0):
     """
     Plot Gini coefficient and centralization score vs. delivery probability.
     
@@ -1187,7 +1240,7 @@ def plot_centralization_vs_delivery(all_messages: list[Message], delivered_messa
     
     for mode, comm_range, max_deg in config_keys:
         for run_num in randomized_runs:
-            config = Configuration(
+            config = ConfigurationWithRun(
                 run_number=run_num, 
                 range=comm_range, 
                 max_degree=max_deg, 
@@ -1358,7 +1411,7 @@ def plot_centralization_vs_delivery(all_messages: list[Message], delivered_messa
     threshold_display = "all deliveries" if time_threshold == float('inf') else f"threshold={int(time_threshold)}s"
     print(f"Subplot centralization vs delivery plot saved ({threshold_display})")
 
-def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: dict[Configuration, Topology]):
+def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
     """
     Plot mean latency vs max node degree for different distance ranges.
     
@@ -1387,7 +1440,7 @@ def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: di
     from collections import defaultdict
     grouped_messages = defaultdict(list)
     for msg in delivered_messages:
-        if msg.delivery_time > 0:
+        # if msg.delivery_time > 0:
             key = (msg.mode, msg.communication_range, msg.max_degree, msg.run)
             grouped_messages[key].append(msg.delivery_time)
     
@@ -1469,9 +1522,10 @@ def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: di
         
         plt.tight_layout()
         plt.subplots_adjust(bottom=0.2)  # Make room for legend below
-        plt.savefig(f'figures/latency_vs_max_degree_{filename_suffix}.png', 
-                   dpi=300, bbox_inches='tight')
+        fpath = f'figures/latency_vs_max_degree_{filename_suffix}.png'
+        plt.savefig(fpath, dpi=300, bbox_inches='tight')
         plt.close()
+        print(f"Saved latency vs max degree plot to {fpath}")
     
     # Generate plots for each mode and distance range combination
     # for mode in [0, 1]:
@@ -1491,92 +1545,44 @@ def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: di
         # All distances
         plot_for_mode_and_ranges(mode, ranges, "All Distances", f"{mode_suffix}_all_dist")
 
-def plot_latency_vs_centralization(delivered_messages: list[Message], topologies: dict[Configuration, Topology]):
+def plot_latency_vs_centralization(delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
     """
     Plot mean latency vs Gini coefficient and S-score for different distance ranges.
     
-    Creates separate plots for:
-    - Low distances (≤40m) - intra and inter cluster
-    - High distances (50-100m) - intra and inter cluster
-    - All distances - intra and inter cluster
+    Arguments:
+        - delivered_messages: list of all delivered messages (from randomized topologies)
+        - topologies: randomized topologies by their configurations
     """
-    TOTAL_NODES = 72
-    
-    # Get all available runs with randomized topologies
-    randomized_runs = sorted(set(
-        config.run_number 
-        for config in topologies.keys() 
-        if config.run_randomize_seed == 1
-    ))
-    
-    if not randomized_runs:
-        print("Warning: No randomized topologies found.")
-        randomized_runs = [1]
-    
-    # Pre-group messages by (mode, comm_range, max_deg, run) for O(n) instead of O(n*m)
-    from collections import defaultdict
-    grouped_messages = defaultdict(list)
+    ranges = sorted(set(config.range for config in topologies.keys()))
+    if not ranges:
+        raise ValueError("No ranges")
+
+    # Pre-group messages by config
+    grouped_messages: dict[ConfigurationWithRun, list[float]] = defaultdict(list)
     for msg in delivered_messages:
-        if msg.delivery_time > 0:
-            key = (msg.mode, msg.communication_range, msg.max_degree, msg.run)
-            grouped_messages[key].append(msg.delivery_time)
+        key = ConfigurationWithRun(run_number = msg.run, range=msg.communication_range, max_degree=msg.max_degree, mode=msg.mode, run_randomize_seed=0)
+        grouped_messages[key].append(msg.delivery_time)
+    data_points: list[MetricsForTopology] = []
     
-    # Collect data points
-    data_points = []
-    
-    # Iterate through grouped messages and calculate metrics
-    for (mode, comm_range, max_deg, run_num), latencies in grouped_messages.items():
-        if run_num not in randomized_runs:
-            continue
-            
-        # Get topology metrics
-        config = Configuration(
-            run_number=run_num, 
-            range=comm_range, 
-            max_degree=max_deg, 
-            mode=mode,
-            run_randomize_seed=1
-        )
+    # latencies is an array containing the delivery times of all messages in the configuration
+    for config, latencies in grouped_messages.items():
         topology = topologies.get(config)
-        
-        if topology is None:
-            continue
-        
-        # Calculate topology metrics
-        degrees_list = []
-        for node_id in range(TOTAL_NODES):
-            node_name = str(node_id)
-            if node_name in topology.connections:
-                degrees_list.append(len(topology.connections[node_name]))
-            else:
-                degrees_list.append(0)
-        
-        gini = calculate_gini_coefficient(degrees_list)
-        num_links = topology.get_number_of_links()
-        s_score = calculate_centralization_score(degrees_list, num_links)
-        
-        mean_latency = np.mean(latencies)
-        
-        data_points.append({
-            'mode': mode,
-            'comm_range': comm_range,
-            'max_degree': max_deg,
-            'run': run_num,
-            'mean_latency': mean_latency,
-            'gini': gini,
-            's_score': s_score
-        })
-    
-    ranges = sorted(set(d['comm_range'] for d in data_points))
+        if not topology:
+            maybes = [t.__str__() for t in topologies if t.range == config.range and t.max_degree == config.max_degree and t.mode == config.mode]
+            print(f"maybes: {maybes}")
+            raise ValueError(f"Configuraiton without topology: {config}")
+        metricsForTopology = MetricsForTopology(config, topology, latencies)
+        data_points.append(metricsForTopology)
+
     
     # Split by distance
     low_ranges = [r for r in ranges if r <= 40]
     high_ranges = [r for r in ranges if r >= 50]
     
-    def plot_for_range_group(mode, comm_ranges, filename_suffix):
+    def plot_for_range_group(data: list[MetricsForTopology], mode: int, ranges_to_plot: list[int], filename_suffix: str):
         """Helper to plot latency vs centralization metrics for a group of communication ranges
         
-        Plots trend lines (linear regression) per communication range, aggregating all max degree configurations.
+        Plots trend lines (linear regression) per communication range, aggregating all configurations.
         """
         
         # Create 2 subplots: Gini and S-score
@@ -1585,134 +1591,81 @@ def plot_latency_vs_centralization(delivered_messages: list[Message], topologies
         # Define markers for different ranges
         markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
         
-        # Plot 1: Latency vs Gini (one trend line per range, aggregated across all max degrees)
-        ax = axes[0]
-        
-        for range_idx, comm_range in enumerate(comm_ranges):
+        # ax1: Latency vs Gini, ax2: latency vs s-score (one trend line per range, aggregated across all max degrees)
+        ax1, ax2 = axes[0], axes[1]
+        for range_idx, comm_range in enumerate(ranges_to_plot):
             # Get all points for this mode and communication range (all max degrees)
-            points = [d for d in data_points 
-                     if d['mode'] == mode and d['comm_range'] == comm_range]
-            
-            if not points:
+            points = [d for d in data if d.config.mode == mode and d.config.range == comm_range]
+            if len(points) < 2:
                 continue
-            
-            # Extract all individual data points (no grouping)
-            x_vals = [p['gini'] for p in points]
-            y_vals = [p['mean_latency'] for p in points]
-            
-            if len(x_vals) < 2:
-                continue
-            
-            # Convert to numpy arrays
-            x_vals = np.array(x_vals)
-            y_vals = np.array(y_vals)
+            x_vals_gini = np.array([p.gini for p in points])
+            x_vals_s_score = np.array([p.s_score for p in points])
+            y_vals = np.array([p.mean_latency for p in points])
             
             # Compute linear regression in log space (since y-axis is log scale)
             log_y_vals = np.log10(y_vals)
             
-            # Fit linear regression
-            coeffs = np.polyfit(x_vals, log_y_vals, 1)
-            poly = np.poly1d(coeffs)
+            # Fit linear regression line using least squares estimate
+            coeffs_gini = np.polyfit(x_vals_gini, log_y_vals, 1)
+            poly_gini = np.poly1d(coeffs_gini)
+            coeffs_s_score = np.polyfit(x_vals_s_score, log_y_vals, 1)
+            poly_s_score = np.poly1d(coeffs_s_score)
             
             # Create smooth x values for trend line
-            x_trend = np.linspace(x_vals.min(), x_vals.max(), 100)
-            y_trend = 10 ** poly(x_trend)  # Convert back from log space
+            x_trend_gini = np.linspace(x_vals_gini.min(), x_vals_gini.max(), 100)
+            y_trend_gini = 10 ** poly_gini(x_trend_gini)  # Convert back from log space
             
-            # Plot scatter points with transparency
-            ax.scatter(x_vals, y_vals, 
+            x_trend_s_score = np.linspace(x_vals_s_score.min(), x_vals_s_score.max(), 100)
+            y_trend_s_score = 10 ** poly_s_score(x_trend_s_score)  # Convert back from log space
+            
+            # Plot scatter points for the value distribution
+            ax1.scatter(x_vals_gini, y_vals, 
                       marker=markers[range_idx % len(markers)],
-                      color='gray', 
-                      alpha=0.2, 
-                      s=30)
+                      color=colors[range_idx], 
+                      alpha=0.3, 
+                      s=20)
+            ax2.scatter(x_vals_s_score, y_vals, 
+                      marker=markers[range_idx % len(markers)],
+                      color=colors[range_idx], 
+                      alpha=0.3, 
+                      s=20)
             
             # Plot trend line with markers
-            ax.plot(x_trend, y_trend,
-                   marker=markers[range_idx % len(markers)],
-                   markevery=10,
-                   markersize=8,
-                   linewidth=2.5,
-                   color='black',
+            ax1.plot(x_trend_gini, y_trend_gini,
                    alpha=0.8,
+                #    marker=markers[range_idx % len(markers)],
+                   color=colors[range_idx],
+                   label=f'{int(comm_range)}m')
+            ax2.plot(x_trend_s_score, y_trend_s_score,
+                   alpha=0.8,
+                #    marker=markers[range_idx % len(markers)],t
+                   color=colors[range_idx],
                    label=f'{int(comm_range)}m')
         
-        ax.set_xlabel('Gini Coefficient', fontsize=12)
-        ax.set_ylabel('Mean Latency (seconds)', fontsize=12)
-        ax.grid(True, alpha=0.3)
-        ax.set_yscale('log')
-        ax.legend(loc='best', fontsize=10)
-        
-        # Plot 2: Latency vs S-score (one trend line per range, aggregated across all max degrees)
-        ax = axes[1]
-        
-        for range_idx, comm_range in enumerate(comm_ranges):
-            # Get all points for this mode and communication range (all max degrees)
-            points = [d for d in data_points 
-                     if d['mode'] == mode and d['comm_range'] == comm_range]
-            
-            if not points:
-                continue
-            
-            # Extract all individual data points (no grouping)
-            x_vals = [p['s_score'] for p in points]
-            y_vals = [p['mean_latency'] for p in points]
-            
-            if len(x_vals) < 2:
-                continue
-            
-            # Convert to numpy arrays
-            x_vals = np.array(x_vals)
-            y_vals = np.array(y_vals)
-            
-            # Compute linear regression in log space (since y-axis is log scale)
-            log_y_vals = np.log10(y_vals)
-            
-            # Fit linear regression
-            coeffs = np.polyfit(x_vals, log_y_vals, 1)
-            poly = np.poly1d(coeffs)
-            
-            # Create smooth x values for trend line
-            x_trend = np.linspace(x_vals.min(), x_vals.max(), 100)
-            y_trend = 10 ** poly(x_trend)  # Convert back from log space
-            
-            # Plot scatter points with transparency
-            ax.scatter(x_vals, y_vals, 
-                      marker=markers[range_idx % len(markers)],
-                      color='gray', 
-                      alpha=0.2, 
-                      s=30)
-            
-            # Plot trend line with markers
-            ax.plot(x_trend, y_trend,
-                   marker=markers[range_idx % len(markers)],
-                   markevery=10,
-                   markersize=8,
-                   linewidth=2.5,
-                   color='black',
-                   alpha=0.8,
-                   label=f'{int(comm_range)}m')
-        
-        ax.set_xlabel('Centralization Score S', fontsize=12)
-        ax.set_ylabel('Mean Latency (seconds)', fontsize=12)
-        ax.grid(True, alpha=0.3)
-        ax.set_yscale('log')
-        ax.legend(loc='best', fontsize=10)
+        ax1.set_xlabel('Gini Coefficient', fontsize=12)
+        ax2.set_xlabel('Centralization Score S', fontsize=12)
+        ax1.set_ylabel('Mean Latency (seconds)', fontsize=12)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_yscale('log')
+        ax1.legend(loc='best', fontsize=10)
         
         plt.tight_layout()
-        plt.savefig(f'figures/latency_vs_centralization_{filename_suffix}.png', 
-                   dpi=300, bbox_inches='tight')
+        fpath=f'figures/latency_vs_centralization_{filename_suffix}.png'
+        print(f"Saving latency vs. centralization plot to {fpath}")
+        plt.savefig(fpath, dpi=300, bbox_inches='tight')
         plt.close()
     
     # Generate plots for each mode, grouped by distance ranges
     for mode in [0, 1]:
         mode_suffix = 'intra' if mode == 0 else 'inter'
         
-        # Create plots for low and high distance ranges
         if low_ranges:
-            plot_for_range_group(mode, low_ranges, f"{mode_suffix}_low_dist")
+            plot_for_range_group(data_points, mode, low_ranges, f"{mode_suffix}_low_dist")
         if high_ranges:
-            plot_for_range_group(mode, high_ranges, f"{mode_suffix}_high_dist")
+            plot_for_range_group(data_points, mode, high_ranges, f"{mode_suffix}_high_dist")
+        plot_for_range_group(data_points, mode, ranges, f"{mode_suffix}_all_dist")        
 
-def plot_topology_and_distance_matrices(all_messages: list[Message], topologies: dict[Configuration, Topology]):
+def plot_topology_and_distance_matrices(all_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
     """
     Generate topology and distance matrix plots for each range and max_degree.
     
@@ -1768,12 +1721,12 @@ def plot_topology_and_distance_matrices(all_messages: list[Message], topologies:
                 ax_topo = axes[mode_idx + 1]  # Index 1 for intra, 2 for inter
                 
                 # Get non-randomized topology (run_randomize_seed=0, run=1)
-                topology_key = Configuration(range=comm_range, mode=mode, max_degree=max_deg, run_number=1, run_randomize_seed=0)
+                topology_key = ConfigurationWithRun(range=comm_range, mode=mode, max_degree=max_deg, run_number=1, run_randomize_seed=0)
                 if topology_key in topologies:
                     topology: Topology = topologies[topology_key]
                     topology_matrix = get_topology_matrix_from_connectivity(topology)
                 else:
-                    configurations: list[Configuration] = topologies.keys()
+                    configurations: list[ConfigurationWithRun] = topologies.keys()
                     other_topologies = [config.__str__() for config in configurations if config.range == comm_range and config.mode == mode]
                     print(f"    Warning: No topology found for range {comm_range}, mode {mode}, max_degree {max_deg}, run 1, randomize_seed 0")
                     print(f"    Others: {other_topologies}")
@@ -2263,36 +2216,36 @@ def plot_creation_time_vs_latency(delivered_messages: list[Message], ranges: lis
         return x_smooth, median_smooth, q25_smooth, q75_smooth
     
     # Plot intra-cluster
-    for range_idx, comm_range in enumerate(ranges):
-        range_msgs = [msg for msg in intra_messages if msg.communication_range == comm_range]
-        if range_msgs:
-            print(f"    Intra-cluster range {comm_range}m: {len(range_msgs)} messages")
+    # for range_idx, comm_range in enumerate(ranges):
+    #     range_msgs = [msg for msg in intra_messages if msg.communication_range == comm_range]
+    #     if range_msgs:
+    #         print(f"    Intra-cluster range {comm_range}m: {len(range_msgs)} messages")
             
-            x_smooth, median_smooth, q25_smooth, q75_smooth = smooth_and_aggregate(range_msgs)
+    #         x_smooth, median_smooth, q25_smooth, q75_smooth = smooth_and_aggregate(range_msgs)
             
-            if len(x_smooth) > 0:
-                color = range_to_color[comm_range]
+    #         if len(x_smooth) > 0:
+    #             color = range_to_color[comm_range]
                 
-                # Plot the median line
-                ax1.plot(x_smooth, median_smooth, 
-                        linewidth=2.5,
-                        color=color,
-                        label=f'{int(comm_range)}m range',
-                        alpha=0.9)
+    #             # Plot the median line
+    #             ax1.plot(x_smooth, median_smooth, 
+    #                     linewidth=2.5,
+    #                     color=color,
+    #                     label=f'{int(comm_range)}m range',
+    #                     alpha=0.9)
                 
-                # Add shaded IQR region (25th to 75th percentile)
-                ax1.fill_between(x_smooth, 
-                                q25_smooth, 
-                                q75_smooth,
-                                color=color,
-                                alpha=0.2)
+    #             # Add shaded IQR region (25th to 75th percentile)
+    #             ax1.fill_between(x_smooth, 
+    #                             q25_smooth, 
+    #                             q75_smooth,
+    #                             color=color,
+    #                             alpha=0.2)
     
-    ax1.set_xlabel('Message Creation Time (seconds)', fontsize=12)
-    ax1.set_ylabel('Latency (seconds)', fontsize=12)
-    ax1.set_title('Intra-cluster: Creation Time vs Latency', fontsize=14)
-    ax1.set_yscale('log')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(loc='best', fontsize=10)
+    # ax1.set_xlabel('Message Creation Time (seconds)', fontsize=12)
+    # ax1.set_ylabel('Latency (seconds)', fontsize=12)
+    # ax1.set_title('Intra-cluster: Creation Time vs Latency', fontsize=14)
+    # ax1.set_yscale('log')
+    # ax1.grid(True, alpha=0.3)
+    # ax1.legend(loc='best', fontsize=10)
     
     # Plot inter-cluster
     for range_idx, comm_range in enumerate(ranges):
@@ -2336,37 +2289,32 @@ def plot_creation_time_vs_latency(delivered_messages: list[Message], ranges: lis
     print(f"  Intra-cluster messages: {len(intra_messages)}")
     print(f"  Inter-cluster messages: {len(inter_messages)}")
 def main():
-    plot_centralization_metrics_examples()
-    # print("Loading message data from pickle files...")
+    # plot_centralization_metrics_examples()
+    print("Loading message data from pickle files...")
 
-    # randomized_all_messages_path = f"all_messages_randomized1.pkl"
-    # with open(randomized_all_messages_path, 'rb') as f:
-    #     randomized_all_messages: list[Message] = pickle.load(f)
+    randomized_all_messages_path = f"all_messages_randomized0.pkl"
+    with open(randomized_all_messages_path, 'rb') as f:
+        randomized_all_messages: list[Message] = pickle.load(f)
 
-    # # # HAVE_LOADED
-    # # randomized_delivered_messages_path = f"delivered_messages_randomized1.pkl"
-    # # with open(randomized_delivered_messages_path, 'rb') as f:
-    # #     randomized_delivered_messages: list[Message] = pickle.load(f)
+    randomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
+    with open(randomized_delivered_messages_path, 'rb') as f:
+        randomized_delivered_messages: list[Message] = pickle.load(f)
 
-    plot_creation_time_vs_latency(randomized_delivered_messages, ranges=[70, 80, 100])
+    # nonrandomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
+    # with open(nonrandomized_delivered_messages_path, 'rb') as f:
+    #     nonrandomized_delivered_messages: list[Message] = pickle.load(f)
 
-    # # # HAVE LOADED
-    # # nonrandomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
-    # # with open(nonrandomized_delivered_messages_path, 'rb') as f:
-    # #     nonrandomized_delivered_messages: list[Message] = pickle.load(f)
-
-
-    # # # HAVE LOADED
-    # # with open(f"topologies_randomized1.pkl", 'rb') as f:
-    # #     randomized_topologies: dict[Configuration, Topology] = pickle.load(f)
+    with open(f"topologies_randomized0.pkl", 'rb') as f:
+        randomized_topologies: dict[ConfigurationWithRun, Topology] = pickle.load(f)
 
     # # # HAVE LOADED
     # # with open("topologies_randomized0.pkl", 'rb') as f:
     # #     nonrandomized_topologies: dict[Configuration, Topology] = pickle.load(f)
 
-    # # DONE
-    # # print("Generating simple analysis plots...")
-    # # plot_message_delivery_distribution(nonrandomized_all_messages, nonrandomized_delivered_messages)
+    # plot_creation_time_vs_latency(randomized_delivered_messages, ranges=[120])
+
+    # print("Generating simple analysis plots...")
+    # plot_message_delivery_distribution(randomized_all_messages, randomized_delivered_messages)
 
     # print("Generating max degree vs. throughput analysis plots...")
     # plot_max_degree_vs_throughput(randomized_delivered_messages)
@@ -2377,12 +2325,12 @@ def main():
     # # plot_metrics_vs_max_degree(randomized_delivered_messages, randomized_topologies)
 
     # # DONE
-    # # print("Generating latency vs. max degree plots...")
-    # # plot_latency_vs_max_degree(randomized_delivered_messages, randomized_topologies)
+    # print("Generating latency vs. max degree plots...")
+    # plot_latency_vs_max_degree(randomized_delivered_messages, randomized_topologies)
 
     # # NOW 
-    # print("Generating latency vs. centralization metrics plots...")
-    # plot_latency_vs_centralization(randomized_delivered_messages, randomized_topologies)
+    print("Generating latency vs. centralization metrics plots...")
+    plot_latency_vs_centralization(randomized_delivered_messages, randomized_topologies)
 
     # print("Generating centralization vs. delivery probability plots...")
     # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=float('inf'))  # All deliveries
@@ -2396,8 +2344,6 @@ def main():
     # # NOW
     # print("Generating delivery success probability plots...")
     # plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, 10.0, 60.0)
-
-    plot_creation_time_vs_latency(randomized_delivered_messages, ranges=[70, 80, 100])
 
     print("\nAll plots generated successfully!")
 
