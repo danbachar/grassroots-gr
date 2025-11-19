@@ -140,7 +140,6 @@ public abstract class Connection {
 		getOtherNode(msgFromNode).messageTransferred(this.msgOnFly.getId(),
 				msgFromNode);
 		clearMsgOnFly();
-		StaticHostMessageGenerator.deliveredMessages++;
 	}
 
 	/**

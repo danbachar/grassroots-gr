@@ -387,6 +387,7 @@ public abstract class MessageRouter {
 			// -> put to buffer
 			addToMessages(aMessage, false);
 		} else if (isFirstDelivery) {
+			StaticHostMessageGenerator.deliveredMessages++;
 			this.deliveredMessages.put(id, aMessage);
 		} else if (outgoing == null) {
 			// Blacklist messages that an app wants to drop.
