@@ -1,4 +1,4 @@
-# python plot_rssi.py --input-dir ./ranges --output-dir ./plots
+# python plot.py --input-dir ./ranges --output-dir ./plots
 #!/usr/bin/env python3
 from pathlib import Path
 from os import listdir, makedirs
@@ -163,8 +163,10 @@ def plot_cdf(distance_rssi_data: dict[float, list[float]], output_dir: str):
     """Plot CDF of RSSI values for each distance"""
     plt.figure(figsize=(12, 8))
     
-    colors = plt.cm.viridis(np.linspace(0, 1, len(distance_rssi_data)))
+    colors: list[str] = plt.cm.viridis(np.linspace(0, 1, len(distance_rssi_data)))
     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+
+    global_min_rssi = min([val for values in distance_rssi_data.values() for val in values])
     
     for i, distance in enumerate(sorted(distance_rssi_data.keys())):
         rssi_values = distance_rssi_data[distance]
@@ -173,13 +175,16 @@ def plot_cdf(distance_rssi_data: dict[float, list[float]], output_dir: str):
             sorted_rssi = np.sort(rssi_values)
             # Calculate CDF
             y = np.arange(1, len(sorted_rssi) + 1) / len(sorted_rssi)
-            plt.plot(sorted_rssi, y, label=f'{distance}m', color=colors[i], 
-                    marker=markers[i % len(markers)], markersize=6, 
-                    linewidth=2, markevery=max(1, len(sorted_rssi)//20))
+
+            plot_x = np.concatenate(([global_min_rssi], sorted_rssi))
+            plot_y = np.concatenate(([0], y))
+
+            plt.step(plot_x, plot_y, label=f'{distance}m', color=colors[i], 
+                    marker=markers[i % len(markers)], markersize=4, markevery=max(1, len(sorted_rssi)//20), 
+                    linewidth=2, where='post')
     
     plt.xlabel('RSSI (dBm)')
     plt.ylabel('Cumulative Probability')
-    plt.title('CDF of RSSI Values by Distance')
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
