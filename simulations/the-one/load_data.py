@@ -45,6 +45,14 @@ class Topology:
                         links_counted[source].add(target)
         return count
     
+    def get_node_degree(self, node_id: str) -> int:
+        if node_id not in self.connections:
+            raise KeyError(f"Node '{node_id}' not in topology.")
+        return len(self.connections[node_id])
+
+    def get_number_of_nodes(self) -> int:
+        return len(self.connections.keys())
+
     def __str__(self) -> str:
         sorted_nodes = sorted(list(map(lambda x: int(x), self.connections.keys())))
         result = "Topology:\n["
@@ -55,26 +63,38 @@ class Topology:
             result += "]\n"
         result += "]"
         return result
-
 class Configuration:
-    def __init__(self, run_number: int, range: int, max_degree: int, mode: int, run_randomize_seed: int) -> None:
-        self.run_number = run_number
+    def __init__(self, range: int, max_degree: int, mode: int, run_randomize_seed: int) -> None:
         self.range = range
         self.max_degree = max_degree
         self.mode = mode
         self.run_randomize_seed = run_randomize_seed
 
     def __str__(self) -> str:
-        return f"Configuration(run={self.run_number}, range={self.range}, max_degree={self.max_degree}, mode={'intra' if self.mode == 0 else 'inter'}, randomize_seed={self.run_randomize_seed})"
+        return f"Configuration(range={self.range}, max_degree={self.max_degree}, mode={'intra' if self.mode == 0 else 'inter'}, randomize_seed={self.run_randomize_seed})"
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Configuration):
             return False
-        return (self.run_number == other.run_number and 
-                self.range == other.range and 
+        return (self.range == other.range and 
                 self.max_degree == other.max_degree and 
                 self.mode == other.mode and
                 self.run_randomize_seed == other.run_randomize_seed)
+
+    def __hash__(self) -> int:
+        return hash((self.range, self.max_degree, self.mode, self.run_randomize_seed))
+class ConfigurationWithRun(Configuration):
+    def __init__(self, run_number: int, range: int, max_degree: int, mode: int, run_randomize_seed: int) -> None:
+        self.run_number = run_number
+        super().__init__(range=range, max_degree=max_degree, mode=mode, run_randomize_seed=run_randomize_seed)
+
+    def __str__(self) -> str:
+        return f"Configuration(run={self.run_number}, range={self.range}, max_degree={self.max_degree}, mode={'intra' if self.mode == 0 else 'inter'}, randomize_seed={self.run_randomize_seed})"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ConfigurationWithRun):
+            return False
+        return self.run_number == other.run_number and super().__eq__(other)
 
     def __hash__(self) -> int:
         return hash((self.run_number, self.range, self.max_degree, self.mode, self.run_randomize_seed))
@@ -261,10 +281,10 @@ def parse_unified_report(unified_report_file: str) -> tuple[list[str], list[str]
     Returns:
         Tuple of (distance_lines, delivered_lines, connectivity_lines, eventlog_lines)
     """
-    distance_lines = []
-    delivered_lines = []
-    connectivity_lines = []
-    eventlog_lines = []
+    distance_lines: list[str] = []
+    delivered_lines: list[str] = []
+    connectivity_lines: list[str] = []
+    eventlog_lines: list[str] = []
     
     with open(unified_report_file, 'r') as f:
         for line in f:
@@ -580,7 +600,7 @@ def load_all_created_messages_from_lines(event_log_lines: list[str], message_siz
     
     return created_messages
 
-def combine_run_message_data(config: Configuration, scenario_prefix: str, message_size: int) -> tuple[list[Message], list[Message], Topology]:
+def combine_run_message_data(config: ConfigurationWithRun, scenario_prefix: str, message_size: int) -> tuple[list[Message], list[Message], Topology]:
     """
     Load and combine message data for a single run configuration from unified report.
     
@@ -671,7 +691,7 @@ def combine_run_message_data(config: Configuration, scenario_prefix: str, messag
     
     return created_messages_run, delivered_messages, final_topology
 
-def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs: int, message_size: int, max_degrees: list[int], run_randomize_seed: int) -> tuple[list[Message], list[Message], dict[Configuration, Topology]]:
+def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], num_runs: int, message_size: int, max_degrees: list[int], run_randomize_seed: int) -> tuple[list[Message], list[Message], dict[ConfigurationWithRun, Topology]]:
     """
     Combine data to get all messages, as well as delivered messages, and topologies.
 
@@ -682,7 +702,7 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
     all_messages: list[Message] = []
     delivered_messages: list[Message] = []
     delivered_message_ids: set[str] = set()
-    all_topologies: dict[Configuration, Topology] = {}
+    all_topologies: dict[ConfigurationWithRun, Topology] = {}
     
     for max_degree in max_degrees:
         for mode in [0,1]: # 0 for intra, 1 for inter
@@ -691,7 +711,7 @@ def combine_all_message_data(scenario_prefix: str, range_suffixes: list[int], nu
                 
                 for run in range(1, num_runs + 1):
                     print(f" Processing run {run}/{num_runs}...")
-                    config = Configuration(run, range_suffix, max_degree, mode, run_randomize_seed)
+                    config = ConfigurationWithRun(run, range_suffix, max_degree, mode, run_randomize_seed)
                     created_messages_run, delivered_messages_run, topology = combine_run_message_data(config, scenario_prefix, message_size)
                     
                     all_messages.extend(created_messages_run)
@@ -790,6 +810,9 @@ def main():
 
     print("Combining all message data directly from unified reports (including undelivered)...")
     all_messages, delivered_messages, topologies = combine_all_message_data(scenario_prefix, ranges, runs, message_size, max_degrees, randomize)
+    print(f"Total messages combined: {len(all_messages)}")
+    print(f"Total delivered messages combined: {len(delivered_messages)}")
+    print(f"Total topologies combined: {len(topologies)}")
     print("All message data combined!")
 
     all_messages_path = f"all_messages_randomized{randomize}.pkl"

@@ -1591,11 +1591,12 @@ def plot_latency_vs_centralization(delivered_messages: list[Message], topologies
         # Define markers for different ranges
         markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
         
+        colors = plt.cm.Paired(np.linspace(0.05, 0.95, len(ranges_to_plot)))
         # ax1: Latency vs Gini, ax2: latency vs s-score (one trend line per range, aggregated across all max degrees)
         ax1, ax2 = axes[0], axes[1]
         for range_idx, comm_range in enumerate(ranges_to_plot):
             # Get all points for this mode and communication range (all max degrees)
-            points = [d for d in data if d.config.mode == mode and d.config.range == comm_range]
+            points = [d for d in data if d.config.mode == mode and d.config.range == comm_range and d.config.max_degree >= 2] # TODO: only run for maxdeg >= 2
             if len(points) < 2:
                 continue
             x_vals_gini = np.array([p.gini for p in points])
