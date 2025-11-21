@@ -15,7 +15,7 @@ Most notably, the rise of unstructured p2p messaging platforms like Firechat~\ci
 
 After exploring the different types of p2p overlay networks, we discuss the choice of the communication protocol, which dictates the limited physical device communication radius.
 We chose to focus on a stable protocol that most modern devices support and the populace is most likely to use in disaster zones: Bluetooth, and more specifically Bluetooth Low Energy (BLE)~\cite{bt-spec}.
-By focusing on BLE-based p2p communication, we can conserve device battery life, to allow for critical communication in extreme situations: it allows users to exchange messages over short ranges over a longer period of time than comparable communication protocols e.g. WiFi Direct~\cite{wifi-ble-power}.
+We decided to focus on Bluetooth Low Energy (BLE) as it is more power efficient, over classic Basic Rate/Enhanced Data Rate (BR/EDR), as BLE conserves device battery life, it allows users to communicate over short ranges over a longer period of time than comparable communication protocols e.g. WiFi Direct~\cite{wifi-ble-power}, %which is critical to save lives.
 
 This paper provides the design space for resilient unstructured p2p networks, based on sparsity of the underlying topologies.
 \begin{figure}[H]

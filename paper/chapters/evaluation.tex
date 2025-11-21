@@ -5,8 +5,8 @@ Finally, to evaluate the performance of different topologies by their centraliza
     \caption{Latency vs. Centralization - inter-cluster communication}
 \label{fig:latency-vs-centralization}
 \end{figure}
-Figure~\ref{fig:latency-vs-centralization} shows how centralization correlates with mean message delivery latency in: in this plot, a clear relationship is visible for most communication radii between an increase in the communication scores, and an increase in the end-to-end message latency.
-The exception lies with the 100m communication radius, which exhibits a negative correlation between centralization and latency: the latency decreases with an increase in centralization. This could be attributed to the fact that nodes in this communication radius was able to establish the all links as most nodes cover more than one cluster cell, which enables the nodes to reach a target node with less hops.
+Figure~\ref{fig:latency-vs-centralization} shows how centralization correlates with mean message delivery latency in: in this plot, a clear relationship is visible for most communication radii between an increase in the centralization scores, and an increase in the end-to-end message latency.
+The exception lies with the 100m communication radius, which exhibits a negative correlation between centralization and latency: the latency decreases with an increase in centralization. This could be attributed to the fact that nodes in this communication radius were able to establish the all links as most nodes cover more than one cluster cell, which enables the nodes to reach a target node with less hops.
 Here, the $\mathscr{S}$ Score is more sensitive to the outliers in the higher latency ranges, which indicates it is a better metric to capture the impact of centralization on message latency, than the Gini coefficient.
 
 \begin{figure}[htbp]

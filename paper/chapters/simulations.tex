@@ -1,8 +1,8 @@
-We used the The ONE simulator~\cite{the-one} to simulate an opportunistic exchange of messages between nodes communicating over the BLE, using the empirical results from the testbed experiment to model the signal path loss with distance.
+We used the The ONE simulator~\cite{the-one} to simulate an opportunistic exchange of messages between nodes communicating over BLE, using the empirical results from the testbed to model the signal path loss with distance.
 The simulation was repeated for 25 runs per configuration, using an Ubuntu 22.04 with an Intel(R) Xeon(R) Gold 6326 CPU @ 2.90GHz with 64 cores, and 247 GB of RAM. To run the simulations we used parallelization, spawning 60 parallel jobs.
-Using a static movement model, every node remains static (i.e. the node does not move) and attempts to send the same amount of messages to all other nodes in the network.
-In a disaster zone, it is critical to disseminate information as fast and as far as possible, and due to instability, no routes can be assumed to exist.
-To mimic this scenario of message propagation in disaster zones, we used an epidemic router to flood messages across the network.
+Using a static movement model, every node remains immobile and attempts to send the same amount of messages to all other nodes in the network.
+% In a disaster zone, it is critical to disseminate information as fast and as far as possible, and due to instability, no routes can be assumed to exist.
+To mimic the scenario of message propagation in disaster zones, we used an epidemic router to flood messages across the network.
 In an epidemic routing scheme, every node sends all messages, including messages it relays, to all of its neighbors, and each neighbor recursively repeats this iterative process until the final destination node for each message is reached.
 For every simulator run, we used either exclusively intra-cluster communication to simulate clique-based short-range cluster communication, or inter-cluster communication to simulate long-range communication:
 In the former, a host generates 20 messages to all other hosts in its cluster, while at latter every host generates 20 messages to all other hosts in the network.
@@ -24,12 +24,15 @@ We fed the random generator with a seed that was mathematically derived from the
 The communication range is a configurable parameter which limits the radius of communication of the network interface that each node has: for simplification, a connection between two nodes can be established if they are within the communication radius of each other, and have direct line of sight.
 A connection does not churn during a simulation run: once a connection is established it is maintained until the end of the simulation run.
 
-\subsection{Model Insights}
-We used the communication radii of [1,5,10,20,30,40,50,60,70,80,90,100] meters to generate different topologies.
+Using the results of the BLE signal propagation from the testbed, we created simulations for the different communication radii tested in the pi experiment.
 A simulation run configuration consists of a set of parameters, including the message generation rate, the maximum communication radius of each node, the maximum number of parallel connections (max node degree) each node can establish and maintain, and the communication mode.
-The same exact topology generated for each communication radius was repeated for [1,2,3,4,5,6,7,8,9,10,15,20] maximum node degrees, each for 25 runs, keeping the topologies invariant to the run number.
-In doing so, this shuffled the order of the hosts picked for message generation, which we used to prevent introducing bias by the order of the hosts.
+The same exact topology generated for each communication radius was repeated for maximum node degrees between 1-20, each for 25 runs, randomizing the topologies with each run.
+In doing so, this shuffled the order of the hosts picked for message generation, which we used to prevent introducing bias by the order of the hosts, and created more variance in the message distance travelled.
 This was done to elicit the effects of the maximum node degree and communication range on timely message delivery.
+
+\subsection{Model Insights}
+Figure~\ref{fig:message-distance-distribution} shows the distance distribution of all messages created, aggregated over all simulation runs, communication ranges, and maximum node degrees tested, split by the communication mode.
+It is evident that the intra-cluster communication mode had a generally higher overall delivery probability, possibly attributed to a lesser strain on the individual hosts' message buffers.
 
 \begin{figure}[hbp]
     \centering
@@ -38,16 +41,13 @@ This was done to elicit the effects of the maximum node degree and communication
     \label{fig:message-distance-distribution}
 \end{figure}
 
-Figure \ref{fig:message-distance-distribution} shows the distance distribution of all messages created, aggregated over all simulation runs, communication ranges, and maximum node degrees tested, split by the communication mode.
-It is evident that the intra-cluster communication mode had a generally higher overall delivery probability, possibly attributed to a lesser strain on the individual hosts' message buffers.
-
+To better understand the topology, figure \ref{fig:topology-matrix-100m-5} shows the distance matrix between hosts to the left, supplemented by two topological matrices, one for each communication mode.
+The topological matrices have a black cell at position $(i, j)$ if host $i$ is connected to host $j$.
+Next, randomized topologies were created for each configuration, to assess how the maximum node degree affects the message latency, centralization, and sparsity metrics of unstructured p2p networks.
+This was done to evaluate how different topologies with the same communication radius and maximum node degree induce variance in the different metrics 
 \begin{figure}[hbp]
     \centering
     \includegraphics[width=0.5\textwidth]{figures/range100_maxdeg5_topology_distance.png}
     \caption{Topology and distance metrices for communication radius 100m, constrained maximum node degree 5}
     \label{fig:topology-matrix-100m-5}
 \end{figure}
-To better understand the topology, figure \ref{fig:topology-matrix-100m-5} shows the distance matrix between hosts to the left, supplemented by two topological matrices, one for each communication mode.
-The topological matrices have a black cell at position $(i, j)$ if host $i$ is connected to host $j$.
-Next, randomized topologies were created for each configuration, to assess how the maximum node degree affects the message latency, centralization, and sparsity metrics of unstructured p2p networks.
-This was done to evaluate how different topologies with the same communication radius and maximum node degree induce variance in the different metrics 

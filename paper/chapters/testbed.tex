@@ -1,26 +1,29 @@
-We decided to focus on Bluetooth Low Energy (BLE) as it is more power efficient, over classic Basic Rate/Enhanced Data Rate (BR/EDR), as BLE is even more efficient for (small) message exchanges~\cite{bt-spec}.
-To measure the BLE signal coverage stochastics and how the signal propagates in free space, we compared the Received Signal Strength Indicator (RSSI) of BLE advertisements at the receiver node across increasing distances from the transmitter node.
-BLE ads form the bottleneck of BLE communications, as ads are used to discover and connect to neighbours in local networks.
-Due to the half-duplex nature of BLE, peers are not able to advertise while they are scanning for BLE ads.
-Two types of scanning are possible: passive scanning, where the scanner only listens for ads, and active scanning, where upon receiving an ad, the scanner also sends extended scan requests to the advertiser node for additional data. 
-In this experiment, passive scanning is used, because it is sufficient to discover neighbors and characterise the RSSI, while active scanning could affect the capacity of the advertising pi to send ads, as it would have to answer the extended scan requests.
+% We decided to focus on Bluetooth Low Energy (BLE) as it is more power efficient, over classic Basic Rate/Enhanced Data Rate (BR/EDR), as BLE is even more efficient for (small) message exchanges~\cite{bt-spec}.
 Our testbed consists of a set of Raspberry Pi 3B+ devices, using the built-in BLE supporting chip Cypress CYW43455, and external power supplies of 5v/3.4A to ensure stable operation and mobility.
-The Raspberry Pis were flashed with a lightweight 64-bit Linux port (Raspberry Pi OS Lite based on Debian Trixie), upon which the basic Bluetooth stack was installed using BlueZ 5.66.
-
-\subsection{Empirical Insights}
-During the experiment, one Raspberry Pi acted as the transmitting node, using an automated bluetoothctl script to continuously advertise at a fixed interval of 20ms $+\mathcal{X}$, where $\mathcal{X}$ is a random variable uniformly distributed between 0 and 10ms, representing the delay added to avoid collisions with other devices using the same advertising interval~\cite{nordic-bt,bt-spec}.
-Another Raspberry Pi performed the receiver role, running a Python script that uses the Bleak library to continuously scan for a window set to one minute.
+The Raspberry Pis were flashed with a lightweight 64-bit Linux port (Raspberry Pi OS Lite based on Debian Trixie), upon which the standard Bluetooth stack was installed using BlueZ 5.66.
+During the experiment, one Raspberry Pi acted as the transmitting node, continuously sending BLE advertisements at a fixed interval of 20ms $+\mathcal{X}$, where $\mathcal{X}$ is a random variable uniformly distributed between 0 and 10ms, representing the delay added to avoid collisions with other devices using the same advertising interval~\cite{nordic-bt,bt-spec}.
+The other pi was the scanner, running a Python script that uses the Bleak library to continuously scan for a window set to one minute, looking for BLE advertisements originating from the other pi.\\
+In BLE, two types of scanning are possible: passive scanning, where the scanner only listens for ads, and active scanning, where upon receiving an ad, the scanner also sends extended scan requests to the advertiser node for additional data. 
+In this experiment, passive scanning is used.%, because it is sufficient to discover neighbors and characterise the RSSI. Active scanning could affect the capacity of the advertising pi to send ads, as it would have to answer the extended scan requests.
+BLE ads form the bottleneck of BLE communications, as ads are used to discover and connect to neighbours in local networks.
+%Due to the half-duplex nature of BLE, peers are not able to advertise while they are scanning for BLE ads.
 The two devices were placed at increasing distances from each other, where the advertiser node was kept static and the receiver node was moved.
-At every distance step, the receiver node recorded the RSSI of all ads received from the transmitting node, filtering them by the unique address of the advertising node, and logging the RSSI values, as well as the transmitting power (tx) and a timestamp, to a file.
+During scaninng, the receiver node recorded the RSSI of all ads received from the transmitting node, as well as the transmitting power (tx) and the timestamp at reception.
 Each distance step was repeated twenty times to capture enough data points for statistical significance.
 The distances measured were from 0 meters to 10 meters in increments of 5 meter, and then from 10 meters in increments of 10 meters, until no more ads were received for most runs of that distance.
 The experiment was divided to two parts: in the first part, the distance points up to 30 meters were evaluated in an urban backyard; in the second part, the distance points from 40 meters were evaluated in an olympic athletics field.
 Both parts of the experiment were conducted in an open level environment with minimal surrounding interference, clear direct line of sight between the nodes, and minimal multipath effects.
-\begin{figure}[hbp]
+To measure the BLE signal coverage stochastics and how the signal propagates in free space, we compared the Received Signal Strength Indicator (RSSI) of BLE advertisements at the receiver node across increasing distances from the transmitter node.
+\subsection{Empirical Insights}
+The Cumulative Distribution Function (CDF) plot of the RSSI values received at different distances is shown in figure~\ref{fig:rssi-cdf}.
+As expected, the figure shows a general decreasing trend of the RSSI values, in correlation with the increase in distance.
+The jittery nature of the CDF curves at distances $\geq 40$ meters can be attributed to the lower number of samples collected at those ranges, which leads to a higher variability in the RSSI measurements.
+The Probability Density Function (PDF) plot and a time series plot of the RSSI values for each distance can be found in the appendix, figures~\ref{fig:rssi-pdf} and~\ref{fig:rssi-time}.
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.5\textwidth]{figures/advertisement_success_probability.png}
-    \caption{Advertisement Delivery Success Probability}
-    \label{fig:advertisement-success-probability}
+    \includegraphics[width=0.5\textwidth]{figures/rssi_cdf.png}
+    \caption{RSSI CDF}
+    \label{fig:rssi-cdf}
 \end{figure}
 
 Figure~\ref{fig:advertisement-success-probability} shows the advertisement delivery success probability at different distances, or the percentage of ads received at the receiver node, depending on two estimates of the number of ads transmitted.
@@ -29,19 +32,15 @@ This plot assumes that the count of ads received at 0 meters is the same as the 
 The bottom plot estimates the number of ads that the transmitter node sent, by dividing the length of time of the scanning interval by the advertising interval of 20ms and adding to it the expected value of the random variable $\mathcal{X}$: 5ms.
 It is trivial to see that as the distance increases, the advertisement delivery success probability decreases, following a roughly exponential decay.
 No ads were received for any run for distances more than 100 meters, so the experiment was concluded at that point.
-
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.5\textwidth]{figures/rssi_cdf.png}
-    \caption{RSSI CDF}
-    \label{fig:rssi-cdf}
+    \includegraphics[width=0.5\textwidth]{figures/advertisement_success_probability.png}
+    \caption{Advertisement Delivery Success Probability}
+    \label{fig:advertisement-success-probability}
 \end{figure}
 
-The Cumulative Distribution Function (CDF) plot of the RSSI values received at different distances is shown in figure~\ref{fig:rssi-cdf}.
-As expected, the figure shows a general decreasing trend of the RSSI values, in correlation with the increase in distance.
-The jittery nature of the CDF curves at distances $\geq 40$ meters can be attributed to the lower number of samples collected at those ranges, which leads to a higher variability in the RSSI measurements.
-The Probability Density Function (PDF) plot and a time series plot of the RSSI values for each distance can be found in the appendix, figures~\ref{fig:rssi-pdf} and~\ref{fig:rssi-time}.
-
+Next, table~\ref{tab:rssi-stats} shows summary statistics of the RSSI values received at different distances: the mean RSSI values presented at the table were used to parameterize the simulation signal propagation decay with distance.
+Throughout all distances, the same transmitting power was recorded and thus not displayed in the table, which hints at the default transmitting power of a Raspberry Pi 3b+: 12 dBm.
 \begin{table}[htbp]
     \centering
     \caption{RSSI Statistics by Distance}
@@ -65,5 +64,3 @@ The Probability Density Function (PDF) plot and a time series plot of the RSSI v
         \bottomrule
     \end{tabular}
 \end{table}
-Next, table~\ref{tab:rssi-stats} shows summary statistics of the RSSI values received at different distances: the mean RSSI values presented at the table were used to parameterize the simulation signal propagation decay with distance.
-Throughout all distances, the same transmitting power was recorded and thus not displayed in the table, which hints at the default transmitting power of a Raspberry Pi 3b+: 12 dBm.
