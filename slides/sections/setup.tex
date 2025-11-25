@@ -1,3 +1,81 @@
 \section{Setup}
-\begin{frame}{Setup}
+\begin{frame}{Testbed}
+    \begin{itemize}
+        \item \textbf{What} Measure real-life outdoor signal propagation of BLE: measure RSSI at different distances \pause
+        \item \textbf{How} Two Raspberry Pi 3B+ boards, standard BlueZ stack, open field, minimal interference sources\pause
+        \item \textbf{Why} TODO
+    \end{itemize}
+
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/rssi_cdf.png}
+        \captionof{figure}{RSSI CDF}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/rssi_vs_distance.png}
+        \captionof{figure}{Mean RSSI vs. Distance}
+    \end{minipage}
+\end{frame}
+\begin{frame}{Testbed}
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/advertisement_success_probability_base0.png}
+    \captionof{figure}{Advertisement Success Probability vs. Distance}
+    % \begin{tabular}{rrrr}
+    %     \toprule
+    %     Distance (m) & Mean RSSI (dBm) & Std Dev & Num Samples \\
+    %     \midrule
+    %     0.0  & $-28.03$ & 1.21 &  43,866 \\
+    %     1.0  & $-55.14$ & 4.62 &  38,600 \\
+    %     5.0  & $-74.58$ & 4.77 &  37,130 \\
+    %     10.0 & $-82.47$ & 6.21 &  33,171 \\
+    %     20.0 & $-86.54$ & 5.05 &  34,526 \\
+    %     30.0 & $-87.45$ & 3.55 &  30,863 \\
+    %     40.0 & $-95.21$ & 2.76 &   7,400 \\
+    %     50.0 & $-97.50$ & 2.44 &   1,081 \\
+    %     60.0 & $-98.82$ & 2.10 &     281 \\
+    %     70.0 & $-99.00$ & 3.74 &       3 \\
+    %     80.0 & $-96.33$ & 1.70 &       3 \\
+    %     90.0 & $-98.25$ & 4.23 &      12 \\
+    %     \bottomrule
+    % \end{tabular}
+\end{frame}
+
+\begin{frame}{Simulations}
+    \begin{itemize}
+        \item \textbf{What} Measure resilience of communication clusters established using empirical BLE signal stochastics\pause
+        \item \textbf{How} The ONE Simulator, $400m\times400m$ L-shaped field, divided to $100m \times 100m$ grid cells\pause
+        \item \textbf{Why} TODO
+    \end{itemize}
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/run.jpg}
+        \captionof{figure}{Simulation Area}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \begin{itemize}
+            \item 12 cluster cells, 6 hosts per cell, static movement model \pause
+            \item Epidemic Router, same amount of messages sent between each host pair \pause
+            \item 25 Simulator runs consist of: network interface communication range, constrained maximum peer degree
+        \end{itemize}
+    \end{minipage}
+\end{frame}
+\begin{frame}{Simulations}
+    \begin{itemize}
+        \item Parameterize network interface bandwidth based on link distance using RSSI results from testbed \pause
+        \item Use log-normal path loss model to interpolate singal propagation decay between discrete distance points, extrapolate for 100m distance as maximum communication range \pause
+        \item BLE 1M PHY: Use maximum channel bandwidth of 1 Mbps at $\le 1m$ distance to deduce message transfer time \pause
+    \end{itemize}
+
+    \centering
+    \includegraphics[width=0.6\textwidth]{figures/message_distance_distribution.png}
+    \captionof{figure}{Message Distance Distribution}        
+\end{frame}
+\begin{frame}{Simulations}
+    \centering
+    \includegraphics[width=\textwidth]{figures/range100_maxdeg5_topology_distance.png}
+    \captionof{figure}{Topological Matrix for communication range 100m and max peer degree 5}
 \end{frame}

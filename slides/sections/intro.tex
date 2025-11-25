@@ -1,41 +1,62 @@
 \section{Introduction}
+% \begin{frame}{Motivation}
+%     \includegraphics[width=\textwidth]{pics/internet.pdf}
+% \end{frame}
+% \begin{frame}{Motivation}
+%     \includegraphics[width=\textwidth]{pics/monitoring.pdf}
+% \end{frame}
+
+% \begin{frame}{Motivation}
+%     \includegraphics[width=\textwidth]{pics/failure.pdf}
+% \end{frame}
 \begin{frame}{Motivation}
-    Problems with the current state of the Internet
+    Provide resilient distributed communication during Internet shutdowns in case of disasters% or political unrest %(Gaza war, political control in Palestine)
+\end{frame}
+\begin{frame}{Problems}
     \begin{itemize}
-        \item government control
-        \item war causes distruptions
-        \item political unrest
-        \item free speech
+        \item Consolidation of power in Internet infrastructure due to running services, protocol, and algorithms in a few closed providers
+        \item Centralization enables both rapid information diffusion but also censorship, failure points, and control, worsened by disasters and political unrest
     \end{itemize}
+    \begin{minipage}{1.0\textwidth}
+        \begin{figure}
+            \centering
+            \includegraphics[width=0.45\textwidth]{pics/twitter-censorship.png}
+            \includegraphics[width=0.45\textwidth]{pics/telegram-ddos.jpg}
+        \end{figure}
+    \end{minipage}
 \end{frame}
+% \begin{frame}{Motivation}
+%     \begin{itemize}
+%         \item Centralization brought issues that are worsened by disasters, oppressive regimes
+%         \item War makes internet infrastructure targets for distruption and control
+%         % \item Unstable political systems make use of Internet surveillance to oppress civic organizers
+%     \end{itemize}
+% \end{frame}
 
-\begin{frame}{Use Case}
-    Provide resilient way to communicate during Internet shutdowns in case of disasters or political unrest (Gaza war, political control in Palestine)
-\end{frame}
+% \begin{frame}{Use Case}
+%     Provide resilient way to communicate during Internet shutdowns in case of disasters or political unrest (Gaza war, political control in Palestine)
+% \end{frame}
 
-\begin{frame}{Solution Approaches}
+\begin{frame}{Solution Approach}
+    To solve fragile consolidation of power, resilient decentralization is key!
     \begin{itemize}
-        \item To solve consolidation of power, decentralization is key \pause
+        \item Providing connectivity without infrastructure: p2p networks
         \begin{itemize}
-            \item Different network type than IP networks: use p2p networks! \pause
-            \begin{itemize}
-                \item Structured p2p networks: Kademlia, BitTorrent, more recently DLT: ETH, Bitcoin, Ripple XRP, etc \pause
-                \item Unstructured p2p networks: FireChat, Twimight, Briar, bitchat, Amigo \pause
-            \end{itemize}
-            \item How to use p2p networks without Internet: use p2p protocols! \pause
-            \begin{itemize}
-                \item BLE \pause
-                \item WiFi-Direct
-                \item Others: Zigbee, LoRA and others
-            \end{itemize}
+            \item Structured: Kademlia, BitTorrent, more recently DLT: ETH, Bitcoin, Ripple XRP, etc
+            \item \textbf{Unstructured}: FireChat, Twimight, Briar, bitchat, Amigo
         \end{itemize}
     \end{itemize}
+    To enable sustainable critical communication for all: use efficient ubiquitous p2p protocols
+    \begin{itemize}
+        \item \textbf{BLE}
+        \item Others: WiFi-Direct, Zigbee, LoRA and others
+    \end{itemize}
 \end{frame}
 
-\begin{frame}{Problem Statement, Approach, Contribution}
-    \textbf{Problem Statement:} How to provide resilient decentralized communication over unstructured p2p networks using efficient p2p communication protocols in the presence of network disruptions? \pause
+\begin{frame}{Contribution}
+    \textbf{Research Question} How to provide resilient decentralized communication over unstructured p2p networks using efficient p2p communication protocols in the presence of network disruptions?
 
-    \textbf{Approach:} Collect empirical data on signal propagation stochastics, use data to parameterize simulations of network topologies, measure resilience w.r.t centralization metrics \pause
+    \textbf{Approach} Collect empirical data to parameterize signal, simulate distributed network topologies, measure resilience w.r.t centralization metrics
 
-    \textbf{Contribution:} Provide the design space for resilient unstructured p2p networks
+    % \textbf{Contribution} Provide the design space for resilient unstructured p2p networks
 \end{frame}
