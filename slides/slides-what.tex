@@ -1,0 +1,29 @@
+\usepackage[utf8]{inputenc}
+\usepackage{packages}
+\usepackage{beamermods}
+\usepackage{adjustbox}
+\usepackage{attachfile}
+
+% For beamer mode (default):
+\author[D. Bachar]{Dan Bachar}
+\title[BridgeTheGap]{Bridging the Gap: Decentralized Grassroots Networks for Disaster Relief and Education}
+
+\newdate{date}{16}{01}{2025}
+
+\usepackage{pgfpages}
+\usepackage{ifthen}
+% ============================================================================
+% jobname solution
+% ============================================================================
+\newif\ifsolution%
+\ifthenelse{\equal{\detokenize{notes}}{\jobname}}{%
+\setbeameroption{show notes on second screen=bottom}
+\setbeamercolor{note page}{bg=white, fg=black}
+\setbeamercolor{note title}{bg=white!95!black, fg=black}
+}{
+}
+
+% TeXLive 2018 compatibility: https://tex.stackexchange.com/questions/426088/texlive-pretest-2018-beamer-and-subfig-collide
+\makeatletter
+\let\@@magyar@captionfix\relax
+\makeatother

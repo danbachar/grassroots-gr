@@ -1,65 +1,33 @@
-\begin{figure}
+The figure~\ref{fig:latency-vs-max-deg} shows how the latency of message delivery per communication radius changes with an increase in the maximum constrained node degree.
+The different communication radii are shown as distinct curves on the plot, and shows as expected a trend towards a lower latency with a lower communication radius.
+A lower communication radius in turn creates fewer messages, as there are generally fewer links and peers to propagate messages to, which exhibits less strain on the message buffers of the individual hosts.
+An important insight that I derive from this plot is that increasing the maximum node degree beyond a certain point does not significantly improve the latency of message delivery, and that increase is echoed in longer communication ranges: in other words, the longer the communication range, the less effect an increase in maximum node degree has on the latency of message delivery.
+Surprisingly, higher communication ranges exhibit a positive effect on latency with an increase in maximum node degree, as especially visible in the 100m communication range.
+
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.5\textwidth]{plots/message-distance-distribution.png}
-    \caption{Message distance distribution across all simulation runs}
-    \label{fig:message-distance-distribution}
+    \includegraphics[width=0.5\textwidth]{figures/latency_vs_max_degree_inter_all_dist.png}
+    \caption{Latency vs. max node degree - inter-cluster communication}
+\label{fig:latency-vs-max-deg}
 \end{figure}
 
-
-\subsection{Bitrate}
-Other than the deliverability probabiliy, we are also interested in seeing how the bitrate changes correlate with the distance changes. Each curve in this graph comes from a simulation with the corresponding communication range: $[5, 120]$ meter ranges are visible (the 1m curve is missing due to not having any delivered messages available). 
-
-\begin{figure}
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.5\textwidth]{plots/bitrate_vs_distance_by_range.png}
-    \caption{Bitrate vs distance by communication range}
-    \label{fig:bitrate-vs-distance-by-range}
+    \includegraphics[width=0.5\textwidth]{figures/centralization_metrics_vs_max_degree_inter_high_dist.png}
+    \caption{Centralization vs. max node degree - inter-cluster communication}
+\label{fig:centralization-vs-max-deg}
 \end{figure}
 
-\subsection{Message Deliverability over distance}
-The following plot shows how the deliverability of messages changes as the communication range increases. Expectedly we see an improvement of the message delivery probability as the communication range increases: between $[1,10]$ meter communication radius barely any messages were able to be delivered; that is due to the fact that 25 hosts were randomly placed on a 400$\times$400m space without movement - if we placed more hosts, the delivery percentage would trivially increase.
+Figure~\ref{fig:centralization-vs-max-deg} shows how the different centralization metrics introduced in section~\ref{sec:state} correlate with an increase in the maximum constrained node degree.
+An extended version of this plot, comparing the aforementioned centralization metrics to the L0 norm also in the intra-cluster communication mode, can be found in the appendix, figure~\ref{fig:centralization-vs-max-deg-full}.
 
-\begin{figure}
+To better understand how fast messages are delivered in different topologies, we generated successful delivery under time threshold heatmaps for different communication ranges and max node degrees in figure~\ref{figures/range100_maxdeg5_inter_thresholds_10s_60s.png}, which provide the full image together with the topological matrices introduced in subsection~\ref{subsec:simulations}, as to how messages are exchanged in a specific topology.
+The heat maps that match the example in figure~\ref{fig:topology-matrix-90m-5} shows two identical topologies, in which the communication range is set to 100m, and the maximum node degree is arbitrarily set to 5.
+The matrices have hosts along their X and Y axes, and a cell at position $(i, j)$ is colored more green the more messages host $i$ successfully delivers to host $j$ within the configured time threshold.
+The difference between the two matrices is the time threshold used: for the top plot a tight threshold of 10 seconds was used, while a more relaxed 60s threshold was used for the bottom plot. As expected, the delivery probability improved by about 3x from 4.6\% to 13.8\%.
+\begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.5\textwidth]{plots/deliverability_vs_communication_range.png}
-    \caption{Message deliverability vs communication range}
-    \label{fig:deliverability-vs-communication-range}
+    \includegraphics[width=0.5\textwidth]{figures/range100_maxdeg5_inter_thresholds_10s_60s.png}
+    \caption{Delivery success probability under time thresholds, 100m range, max node degree 5, inter-cluster communication}
+\label{fig:delivery-success-probability}
 \end{figure}
-
-\subsection{End-to-end Latency}
-As the latency distribution plot below shows, spending more energy to expand the reliable communication range does not necessarily directly correlate with a higher achieved bitrate: that is due to nodes spending more processing time relaying messages, buffers filling up, and nodes getting overflown with messages. A lower communication range also means less messages are sent, which yields nodes that can more easily process messages; at this point it's worth to mention that the routing technique used is the epidemic routing, where each ndoe forwards each message it receives to all nodes it's connected to, until the destination is found; the epidemic router does not automatically drop messages upon succesful delivery of a node to the intended destination of a message, which leads to the buffer bloat. 
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.5\textwidth]{plots/latency_percentiles.png}
-    \caption{End-to-end latency percentiles by communication range}
-    \label{fig:latency-percentiles}
-\end{figure}
-
-\subsection{Effect of node degree on hop latency and count}
-The following three plots illustrate how the node degree correlates with message hop count, hop latency, and communication range.
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.5\textwidth]{plots/node_degree_vs_hop_count.png}
-    \caption{Node degree vs hop count by communication range}
-    \label{fig:node-degree-vs-hop-count}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.5\textwidth]{plots/node_degree_vs_hoplatency.png}
-    \caption{Node degree vs hop latency}
-    \label{fig:node-degree-vs-hoplatency}
-\end{figure}
-
-\begin{figure}
-    \centering
-    \includegraphics[width=0.5\textwidth]{plots/node_degree_vs_communication_radius.png}
-    \caption{Node degree vs communication radius}
-    \label{fig:node-degree-vs-communication-radius}
-\end{figure}
-
-The first plot, node degree vs. hop count by communication range, has a curve for each one of the simulated communication ranges, and shows raw values for the node degree (as well as the second plot): in this context, node degree is defined as the number of neighbours each node is connected to; a node is connected to all nodes it is a neighbour of. We can see an expected decrease in message hop count as the communication range increases, with the 120m range showing the highest node degree, and shows the most stable decrease in hop count as node degree increases.
-The second plot mainly shows one key point: for most node degrees, the average hop latency does not change, other than outliers around node degrees higher than 12, which are also less statistically significant as the inner quartile range is higher.
-The last plot showcases an expected increase in the median node degree as the communication range increases; the median node degree starts being true positive around the communication radius of 40 meters, simply because through the 

@@ -1,0 +1,69 @@
+\documentclass[NET,english,beameralt]{tumbeamer}
+
+\usepackage[utf8]{inputenc}
+\usepackage{packages}
+\usepackage{beamermods}
+\usepackage{adjustbox}
+\usepackage{attachfile}
+
+% For beamer mode (default):
+\author[D. Bachar]{Dan Bachar, \textnormal{David Guzman}}
+\title[Sparsity to Reliability]{Resilient decentralized communication for unstructured peer-to-peer networks\\ \small From Sparsity to Reliability: the Decentralized Path to Free Speech}
+
+\newdate{date}{26}{11}{2025}
+
+\usepackage{pgfpages}
+\usepackage{ifthen}
+% ============================================================================
+% jobname solution
+% ============================================================================
+\newif\ifsolution%
+\ifthenelse{\equal{\detokenize{notes}}{\jobname}}{%
+\setbeameroption{show notes on second screen=bottom}
+\setbeamercolor{note page}{bg=white, fg=black}
+\setbeamercolor{note title}{bg=white!95!black, fg=black}
+}{
+}
+
+% TeXLive 2018 compatibility: https://tex.stackexchange.com/questions/426088/texlive-pretest-2018-beamer-and-subfig-collide
+\makeatletter
+\let\@@magyar@captionfix\relax
+\makeatother
+
+
+\begin{document}
+\input{sections/intro}
+\input{sections/outline-state}
+\input{sections/state}
+\input{sections/outline-setup}
+\input{sections/setup}
+\input{sections/outline-evaluation}
+\input{sections/evaluation}
+\input{sections/outline-discussion}
+\input{sections/discussion}
+\input{sections/outline-future}
+\input{sections/future}
+
+\section{}
+\begin{frame}{}
+    \vspace{2cm}
+    \begin{center}
+        {\LARGE Thank you!}\\
+        {\LARGE Questions?}
+    \end{center}
+\end{frame}
+
+\section{Bibliography}
+\begin{frame}[allowframebreaks]
+    % Use 'alpha' style to get [Aut02] or 'abbrv' for [1]
+    \bibliographystyle{alpha} 
+    
+    % Force all references to show up
+    \nocite{*} 
+    
+    % This MUST match your actual filename (references.bib)
+    \bibliography{references} 
+\end{frame}
+
+\input{sections/appendix}
+\end{document}

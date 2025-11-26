@@ -15,7 +15,7 @@ class Room:
                 file.write(f"POINT ({x} {y})\n")
     
     @staticmethod
-    def draw_map(rooms, clusters=None, cluster_size=120.0, output_path="rooms.png", image_width=1000, image_height=1000, wall_color="black", room_color="lightgray", line_width=0.5, background_color="white", mirrored=False) -> None:
+    def draw_map(rooms, clusters=None, cluster_size=100.0, output_path="rooms.png", image_width=1000, image_height=1000, wall_color="black", room_color="lightgray", line_width=0.5, background_color="white", mirrored=False) -> None:
 
         img = Image.new("RGB", (image_width, image_height), background_color)
         draw = ImageDraw.Draw(img)
@@ -43,7 +43,7 @@ class Room:
             print(f"Error saving image to {output_path}: {e}")
 
     @staticmethod
-    def draw_clusters(draw, clusters, mirrored=False, color="red", line_width=1, cluster_size=120.0):
+    def draw_clusters(draw, clusters, mirrored=False, color="red", line_width=1, cluster_size=100.0):
         for cluster in clusters:
             start_x, start_y = cluster
 

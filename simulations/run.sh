@@ -6,29 +6,28 @@ DEFAULT_MAX_PARALLEL_JOBS=1
 DEFAULT_NUM_RUNS=50
 DEFAULT_SIZES=(247)
 SCENARIO_NAME="GR"
-DEFAULT_RANGES=(120)
+DEFAULT_RANGES=(100)
 DEFAULT_START=1
-DEFAULT_INTRACLUSTER_BINSIZE=5
-DEFAULT_INTERCLUSTER_BINSIZE=20
+DEFAULT_MAXIMUM_NODE_DEGREES=(1 2 3 4 5 6 7 8 9 10)
 DEFAULT_MODE=1
-
+DEFAULT_RUN_RANDOMIZE_SEED=0
 print_usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  -m, --mode MODE        Cluster communicatoin mode: 0 to allow only intra-cluster communication, 1 to also allow inter-cluster communication (default: $DEFAULT_MODE)"
+    echo "  -m, --mode MODE        Cluster communication mode: 0 to allow only intra-cluster communication, 1 to also allow inter-cluster communication (default: $DEFAULT_MODE)"
     echo "  -j, --jobs NUM         Maximum number of parallel jobs (default: $DEFAULT_MAX_PARALLEL_JOBS)"
     echo "  -n, --num NUM          Number of runs per size (default: $DEFAULT_NUM_RUNS)"
     echo "  -start NUM             Run number to start from (default: $DEFAULT_START)"
     echo "  -r, --ranges RANGE...  Space-separated list of ranges (default: ${DEFAULT_RANGES[*]})"
     echo "  -s, --sizes SIZE...    Space-separated list of message sizes (default: ${DEFAULT_SIZES[*]})"
-    echo "  -intra-bin-size NUM   Bin size for intra-cluster communication (default: $DEFAULT_INTRACLUSTER_BINSIZE)"
-    echo "  -inter-bin-size NUM   Bin size for inter-cluster communication (default: $DEFAULT_INTERCLUSTER_BINSIZE)"
+    echo "  -max-node-degrees NUM...   Space-separated list of maximum node degree (default: ${DEFAULT_MAXIMUM_NODE_DEGREES[*]})"
+    echo "  --randomize            If set to 1, causes different runs to change the topology random number generator seed (default: $DEFAULT_RUN_RANDOMIZE_SEED)"
     echo "  -h, --help             Show this help message"
     echo ""
     echo "This script generates random stationary nodes for simulations."
     echo ""
     echo "Example:"
-    echo "  $0 --name GR --jobs 32 --num 25 --sizes 100 1000 10000 --range 12 120"
+    echo "  $0 --name GR --jobs 32 --num 25 --sizes 100 1000 10000 --range 12 100"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -65,13 +64,17 @@ while [[ $# -gt 0 ]]; do
                 shift
             done
             ;;
-        -intra-bin-size)
-            INTRA_CLUSTER_BIN_SIZE="$2"
-            shift 2
+        -max-node-degrees)
+            MAX_NODE_DEGREES=()
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+                MAX_NODE_DEGREES+=("$1")
+                shift
+            done
             ;;
-        -inter-bin-size)
-            INTER_CLUSTER_BIN_SIZE="$2"
-            shift 2
+        --randomize)
+            RUN_RANDOMIZE_SEED=1
+            shift
             ;;
         -h|--help)
             print_usage
@@ -93,6 +96,9 @@ fi
 if [ ${#RANGES[@]} -eq 0 ]; then
     RANGES=("${DEFAULT_RANGES[@]}")
 fi
+if [ ${#MAX_NODE_DEGREES[@]} -eq 0 ]; then
+    MAX_NODE_DEGREES=("${DEFAULT_MAXIMUM_NODE_DEGREES[@]}")
+fi
 if [ -z "$MODE" ]; then
     MODE=$DEFAULT_MODE
 elif [[ "$MODE" != 0 && "$MODE" != 1 ]]; then
@@ -100,9 +106,7 @@ elif [[ "$MODE" != 0 && "$MODE" != 1 ]]; then
     exit 1
 fi
 START_RUN=${START_RUN:-$DEFAULT_START}
-INTRA_CLUSTER_BIN_SIZE=${INTRA_CLUSTER_BIN_SIZE:-$DEFAULT_INTRACLUSTER_BINSIZE}
-INTER_CLUSTER_BIN_SIZE=${INTER_CLUSTER_BIN_SIZE:-$DEFAULT_INTERCLUSTER_BINSIZE}
-
+RUN_RANDOMIZE_SEED=${RUN_RANDOMIZE_SEED:-$DEFAULT_RUN_RANDOMIZE_SEED}
 echo "Configuration:"
 echo "  Communication mode: $MODE"
 echo "  Maximum parallel jobs: $MAX_PARALLEL_JOBS"
@@ -111,8 +115,8 @@ echo "  Starting run number: $START_RUN"
 echo "  Message sizes: [$(IFS=', '; echo "${SIZES[*]}")]"
 echo "  Interface ranges: [$(IFS=', '; echo "${RANGES[*]}")]"
 echo "  Scenario name: $SCENARIO_NAME"
-echo "  Intra-cluster bin size: $INTRA_CLUSTER_BIN_SIZE"
-echo "  Inter-cluster bin size: $INTER_CLUSTER_BIN_SIZE"
+echo "  Max node degrees: [$(IFS=', '; echo "${MAX_NODE_DEGREES[*]}")]"
+echo "  Randomize seed per run: $RUN_RANDOMIZE_SEED"
 
 compile() {
     cd the-one
@@ -127,17 +131,21 @@ run_simulation() {
     local run=$2
     local range=$3
     local mode=$4
-    local job_id="size${size}_run${run}_range${range}_mode${mode}"
+    local max_node_degree=$5
+    local job_id="size${size}_run${run}_range${range}_mode${mode}_maxdeg${max_node_degree}"
 
+    start_timestamp=$(date +%s)
     echo "[$(date '+%H:%M:%S')] Starting simulation ${job_id}"
 
     cd the-one
     ./one.sh -b 1  \
-        "$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt" \
-        "$SCENARIO_NAME-comms-settings-mode${mode}.txt"
+        "$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}-randomize${RUN_RANDOMIZE_SEED}.txt" \
+        "$SCENARIO_NAME-comms-settings-mode${mode}-maxdeg${max_node_degree}.txt"
     cd -
-    
-    echo "[$(date '+%H:%M:%S')] Completed simulation ${job_id}"
+    end_timestamp=$(date +%s)
+    duration=$((end_timestamp-start_timestamp))
+
+    echo "[$(date '+%H:%M:%S')] Completed simulation ${job_id} in ${duration} seconds"
 }
 
 wait_for_jobs() {
@@ -152,19 +160,25 @@ prepare_config_files() {
 
     # 0 for intra-cluster communication, 1 for inter-cluster communication
     for mode in 0 1; do
-        sed -e "s/Events1.mode = .*/Events1.mode = $mode/" \
-            -e "s/bluetoothInterface.communicationMode = .*/bluetoothInterface.communicationMode = $mode/" \
-            the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-mode${mode}.txt"
-        for size in "${SIZES[@]}"; do
-            for run in $(seq $START_RUN $NUM_RUNS); do
-                for range in "${RANGES[@]}"; do
-                    RANDOM_SEED=$((size+run*100+range*1000))
-                    sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_size${size}_run${run}_range${range}_mode${mode}/" \
-                        -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
-                        -e "s/Events1.size = .*/Events1.size = $size/" \
-                        -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
-                        -e "s/Events1.binSize = .*/Events1.binSize = $((mode == 0 ? INTRA_CLUSTER_BIN_SIZE : INTER_CLUSTER_BIN_SIZE))/" \
-                        the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}.txt"
+        for max_node_degree in "${MAX_NODE_DEGREES[@]}"; do
+            sed -e "s/Events1.mode = .*/Events1.mode = $mode/" \
+                -e "s/bluetoothInterface.communicationMode = .*/bluetoothInterface.communicationMode = $mode/" \
+                -e "s/bluetoothInterface.maxDegree = .*/bluetoothInterface.maxDegree = $max_node_degree/" \
+                the-one/$SCENARIO_NAME-comms-settings.txt > "the-one/$SCENARIO_NAME-comms-settings-mode${mode}-maxdeg${max_node_degree}.txt"
+            for size in "${SIZES[@]}"; do
+                for run in $(seq $START_RUN $NUM_RUNS); do
+                    for range in "${RANGES[@]}"; do
+                        if [ "$RUN_RANDOMIZE_SEED" -eq 1 ]; then
+                            RANDOM_SEED=$((size+range*1000+run*10000))
+                        else
+                            RANDOM_SEED=$((size+range*1000))
+                        fi
+                        sed -e "s/Scenario.name = .*/Scenario.name = ${SCENARIO_NAME}_size${size}_run${run}_range${range}_mode${mode}_maxdeg${max_node_degree}_randomize${RUN_RANDOMIZE_SEED}/" \
+                            -e "s/MovementModel.rngSeed = .*/MovementModel.rngSeed = ${RANDOM_SEED}/" \
+                            -e "s/Events1.size = .*/Events1.size = $size/" \
+                            -e "s/bluetoothInterface.transmitRange = .*/bluetoothInterface.transmitRange = $range/" \
+                            the-one/$SCENARIO_NAME-settings.txt > "the-one/$SCENARIO_NAME-settings-size${size}-run${run}-range${range}-mode${mode}-maxdeg${max_node_degree}-randomize${RUN_RANDOMIZE_SEED}.txt"
+                    done
                 done
             done
         done
@@ -178,26 +192,31 @@ run_simulations() {
     local NUMBER_OF_SIZES=${#SIZES[@]}
     local NUMBER_OF_RANGES=${#RANGES[@]}
     local NUMBER_OF_MODES=$((MODE+1)) # mode is 0 or 1, so add 1 to get count
-    local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS * NUMBER_OF_MODES))
+    local NUMBER_OF_MAX_DEGREES=${#MAX_NODE_DEGREES[@]}
+    local TOTAL_SIMULATIONS=$((NUMBER_OF_SIZES * NUMBER_OF_RANGES * NUM_RUNS * NUMBER_OF_MODES * NUMBER_OF_MAX_DEGREES))
 
     echo "Starting parallel simulations with up to $MAX_PARALLEL_JOBS concurrent jobs..."
     echo "Total simulations to run: $TOTAL_SIMULATIONS"
+    total_max_duration=$((TOTAL_SIMULATIONS * 30000 / MAX_PARALLEL_JOBS)) # assuming each simulation takes at most 30000 seconds
+    echo "Estimated total duration with $MAX_PARALLEL_JOBS parallel jobs: ~${total_max_duration} seconds (~$((total_max_duration / 3600)) hours)"
     start_timestamp=$(date +%s)
     echo "Start time: $(date)"
 
     total_jobs=0
-    for mode in $(seq 0 $MODE); do
-        for size in "${SIZES[@]}"; do
-            for range in "${RANGES[@]}"; do
-                echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $mode"
-                for run in $(seq $START_RUN $NUM_RUNS); do
-                    wait_for_jobs $MAX_PARALLEL_JOBS
-                    run_simulation $size $run $range $mode &
+    for max_degree in "${MAX_NODE_DEGREES[@]}"; do
+        for mode in $(seq 0 $MODE); do
+            for size in "${SIZES[@]}"; do
+                for range in "${RANGES[@]}"; do
+                    echo "Scheduling simulations for message size: $size, communication radius: $range, mode: $mode, max node degree: $max_degree"
+                    for run in $(seq $START_RUN $NUM_RUNS); do
+                        wait_for_jobs $MAX_PARALLEL_JOBS
+                        run_simulation $size $run $range $mode $max_degree &
 
-                    total_jobs=$((total_jobs + 1))
-                    echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range, mode=$mode"
+                        total_jobs=$((total_jobs + 1))
+                        echo "Scheduled job $total_jobs/$TOTAL_SIMULATIONS: size=$size, run=$run, range=$range, mode=$mode, max_node_degree=$max_degree"
 
                     sleep 0.1
+                    done
                 done
             done
         done

@@ -1,1376 +1,2352 @@
+from typing import Any, Optional
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import pickle
-from load_data import Message, Hop # Hop is needed, otherwise the pickle load won't work
+from load_data import Message, Hop, HostInfo, Topology, Configuration, ConfigurationWithRun # types needed otherwise the pickle load won't work
+import os
+import matplotlib.pyplot as plt
+from collections import defaultdict
+class Metrics:
+    def __init__(self, mean_latency: np.floating[Any], gini: float, s_score: float) -> None:
+        self.mean_latency = mean_latency
+        self.gini = gini
+        self.s_score = s_score
 
-# Disclaimer: Claude 4.0 helped writing this code, especially in plotting. 
-# Data processing and loading was done by us
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Metrics):
+            return False
+        return self.mean_latency == other.mean_latency and self.gini == other.gini and self.s_score == other.s_score
+    
+    def __hash__(self) -> int:
+        return hash((self.mean_latency, self.gini, self.s_score))
 
-def create_dataframe(messages: list[Message]):
-    """Create a pandas DataFrame from Message objects for analysis"""
-    data = []
-    for msg in messages:
-        if msg.hops:  # Only include messages that have hop data
-            data.append({
-                'Communication_Range': msg.communication_range,
-                'Hop_Count': len(msg.hops),
-                'Distance': msg.distance,
-                'Delivery_Time': msg.delivery_time,
-                'Message_Size': msg.size
-            })
-    return pd.DataFrame(data)
+class TopologyForConfig:
+    def __init__(self, config: ConfigurationWithRun, topology: Topology) -> None:
+        self.config = config
+        self.topology = topology
+    
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TopologyForConfig):
+            return False
+        return (self.config == other.config and 
+                self.topology == other.topology)
+    
+    def __hash__(self) -> int:
+        return hash((self.config, self.topology))
+class MetricsForTopology(TopologyForConfig):
+    mean_latency: np.floating[Any]
+    median_latency: np.floating[Any]
+    gini: float
+    s_score: float
 
-def plot_hop_counts(df):
-    """Plot hop count distributions for each communication range using a grouped bar plot"""
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    # Get unique communication ranges and create color map
-    ranges = sorted(df['Communication_Range'].unique(), key=int)
-    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
-    
-    # Get unique hop counts that actually exist in the data
-    unique_hop_counts = sorted(df['Hop_Count'].unique())
-    
-    # Width of each bar and positions of bar groups
-    bar_width = 0.8 / len(ranges)  # Adjust total width of group
-    
-    # Store frequencies for statistics
-    all_frequencies = {}
-    
-    # First pass: calculate all frequencies to determine which hop counts to show
-    hop_counts_to_show = set()
-    for i, comm_range in enumerate(ranges):
-        range_data = df[df['Communication_Range'] == comm_range]['Hop_Count']
-        
-        unique, counts = np.unique(range_data, return_counts=True)
-        freq_pct = (counts / len(range_data)) * 100
-        all_frequencies[comm_range] = dict(zip(unique, freq_pct))
-        
-        # Add hop counts that have >= 1% frequency for at least one range
-        for hop_count, freq in zip(unique, freq_pct):
-            if freq >= 1.0:
-                hop_counts_to_show.add(hop_count)
-    
-    # Filter to only hop counts that will actually be displayed
-    unique_hop_counts = sorted(list(hop_counts_to_show))
-    
-    # Plot bars for each communication range
-    for i, comm_range in enumerate(ranges):
-        # Use pre-calculated frequencies
-        x = np.array(unique_hop_counts) + i * bar_width - (len(ranges)-1) * bar_width/2
-        
-        freq_array = np.zeros(len(unique_hop_counts))
-        for j, hop_count in enumerate(unique_hop_counts):
-            freq_value = all_frequencies[comm_range].get(hop_count, 0)
-            # Only show bars with frequency >= 1%
-            freq_array[j] = freq_value if freq_value >= 1.0 else 0
-        
-        bars = ax.bar(x, freq_array, bar_width, 
-                     label=f'{int(comm_range)}m range',
-                     color=colors[i],
-                     alpha=0.7)
-        
-        # Add value labels on top of bars
-        for bar, freq in zip(bars, freq_array):
-            if freq > 0:  # Only add label if there's a non-zero frequency
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height,
-                       f'{freq:.1f}%',
-                       ha='center', va='bottom',
-                       rotation=90,
-                       fontsize=8)
+    def __init__(self, config: ConfigurationWithRun, topology: Topology, latencies: list[float]) -> None:
+        """ calculate metrics per config and resulting topology: metrics per mode, run, max degree, comms range (mean latency per config)"""
+        super().__init__(config, topology)
 
-    ax.set_xlabel('Hop Count')
-    ax.set_ylabel('Frequency (%)')
-    ax.set_title('Hop Count Distribution by Communication Range')
-    ax.set_xticks(unique_hop_counts)
-    ax.set_xlim(min(unique_hop_counts) - 0.5, max(unique_hop_counts) + 0.5)  # Limit x-axis to observed hop counts
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax.grid(True, alpha=0.3, axis='y')
-    ax.set_yscale('log')  # Make y-axis logarithmic to better show small frequencies
-    
-    plt.tight_layout()
-    plt.savefig(f'figures/hopcount_distribution_by_range.png', 
-                bbox_inches='tight', dpi=300)
-    plt.close()
+        self.mean_latency = np.mean(latencies)
+        self.median_latency = np.median(latencies)
+        degrees_list: list[int] = []
+        for node_id in range(self.topology.get_number_of_nodes()):
+            node_degree = self.topology.get_node_degree(str(node_id))
+            degrees_list.append(node_degree)
 
-def plot_distance_vs_hopcount_by_range(df, num_bins = 20):
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ranges: list[int] = sorted(df['Communication_Range'].unique(), key=int)
-    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+        self.gini = calculate_gini_coefficient(degrees_list)
+        num_links = self.topology.get_number_of_links()
+        self.s_score = calculate_centralization_score(degrees_list, num_links)     
+        self.mean_latency = np.mean(latencies)
+        
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, MetricsForTopology):
+            return False
+        return (self.mean_latency == other.mean_latency and 
+                self.median_latency == other.median_latency and 
+                self.gini == other.gini and 
+                self.s_score == other.s_score and 
+                super().__eq__(other))
 
-    for comm_index, comm_range in enumerate(ranges):
-        range_data = df[df['Communication_Range'] == comm_range]
-        
-        # Create distance bins
-        min_dist = range_data['Distance'].min()
-        max_dist = range_data['Distance'].max()
-        distance_bins = np.linspace(min_dist, max_dist, num_bins)
-        bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
-        
-        mean_hops = []
-        std_hops = []
-        
-        # Calculate mean and std for each bin
-        for i in range(len(distance_bins)-1):
-            mask = (range_data['Distance'] >= distance_bins[i]) & (range_data['Distance'] < distance_bins[i+1])
-            bin_data = range_data[mask]['Hop_Count']
-            if len(bin_data) > 0:  # Only include bins with data
-                mean_hops.append(bin_data.mean())
-                std_hops.append(bin_data.std())
-            else:
-                mean_hops.append(np.nan)
-                std_hops.append(np.nan)
-        
-        mean_hops = np.array(mean_hops)
-        std_hops = np.array(std_hops)
-        
-        # Remove NaN values for plotting
-        valid_mask = ~np.isnan(mean_hops)
-        valid_centers = bin_centers[valid_mask]
-        valid_means = mean_hops[valid_mask]
-        valid_stds = std_hops[valid_mask]
+    def __hash__(self) -> int:
+        return hash((self.config, self.topology, self.mean_latency, self.median_latency, self.gini, self.s_score))
 
-        line = ax.plot(valid_centers, valid_means, 
-                        label=f'{int(comm_range)}m range',
-                        color=colors[comm_index],
-                        linewidth=2)
-        
-        # Plot standard deviation as shaded area
-        ax.fill_between(valid_centers, 
-                        valid_means - valid_stds, 
-                        valid_means + valid_stds, 
-                        alpha=0.2, 
-                        color=line[0].get_color())
-    ax.set_xlabel('Distance (m)')
-    ax.set_ylabel('Average Hop Count')
-    ax.set_title('Distance vs Average Hop Count by Communication Range')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(f'figures/distance_hopcount_per_range.png', dpi=300, bbox_inches='tight')
-
-def plot_latency_frequency_by_range(messages):
-    """Plot percentile distribution of latencies"""
-    # Increase figure height to accommodate labels
-    fig, ax = plt.subplots(figsize=(12, 10))
-    
-    ranges = sorted(np.unique([msg.communication_range for msg in messages]), key=int)
-    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
-    
-    special_percentiles = [50, 99.9, 99.99, 99.999, 99.9999]
-    plotting_percentiles = [0] + special_percentiles
-    percentile_stats = {}
-    
-    tick_positions = np.arange(len(special_percentiles))
-    all_positions = np.arange(-1, len(special_percentiles))
-    
-    for i, comm_range in enumerate(ranges):
-        messages_for_range = list(filter(lambda msg, r_inner=float(comm_range): 
-                                      msg.communication_range == r_inner and msg.delivery_time > 0, 
-                                      messages))
-        
-        latencies = sorted([msg.delivery_time for msg in messages_for_range])
-        
-        # Skip this range if no messages were delivered (empty latencies array)
-        if not latencies:
-            print(f"Warning: No delivered messages found for communication range {int(comm_range)}m - skipping this range in latency plot")
-            continue
-            
-        percentiles = np.arange(1, len(latencies) + 1) / len(latencies) * 100
-        
-        plot_positions = []
-        plot_latencies = []
-        
-        for j, p in enumerate(plotting_percentiles):
-            if p == 0:
-                # 0th percentile is the minimum latency
-                latency_at_percentile = latencies[0]
-                position = all_positions[j]  # -1
-            else:
-                latency_at_percentile = np.interp(p, percentiles, latencies)
-                position = all_positions[j]
-                
-            plot_positions.append(position)
-            plot_latencies.append(latency_at_percentile)
-        
-        ax.plot(plot_positions, plot_latencies, 
-                label=f'{int(comm_range)}m range', 
-                color=colors[i],
-                linewidth=2.5,
-                marker='o',
-                markersize=4)
-        
-        percentile_stats[comm_range] = {
-            p: np.interp(p, percentiles, latencies) 
-            for p in special_percentiles
-        }
-
-    # Set x-axis limits to show from 0% position to highest percentile with margin
-    ax.set_xlim(-1.2, len(special_percentiles) - 0.5)
-    
-    xticks = tick_positions 
-    xticklabels = ['50%', '99.9%', '99.99%', '99.999%', '99.9999%']
-    
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(xticklabels)    
-    ax.set_xlabel('Percentile (%)', fontsize=12)
-    ax.set_ylabel('Latency (seconds)', fontsize=12)
-    ax.set_title('Latency Percentile Distribution', fontsize=14, pad=20)
-    
-    ax.legend(loc='upper left', 
-             fontsize=10, 
-             framealpha=0.9,
-             title='Communication Ranges')
-    ax.set_yscale('log')
-    
-    # Adjust layout with more space for labels
-    plt.subplots_adjust(left=0.15)  # Increase left margin
-    plt.savefig(f'figures/latency_percentiles.png',
-                bbox_inches='tight', dpi=300)
-    plt.close()
-
-def plot_node_degree_vs_latency(messages):
-    """Plot relationship between node degree and hop latency aggregated across all communication ranges"""
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    # Create data points for each hop
-    data = []
-    for msg in messages:
-        if msg.hops:
-            for hop in msg.hops:
-                if hop.hop_time > 0:
-                    data.append({
-                        'size': msg.size,
-                        'node_degree': hop.from_node_degree,
-                        'hop_latency': hop.hop_time
-                    })
-    
-    df = pd.DataFrame(data)
-    
-    # Create binned statistics
-    bins = np.arange(0, 51, 5)  # 0-50 in steps of 5
-    bin_means = []
-    bin_stds = []
-    bin_centers = []
-    bin_counts = []
-    
-    for j in range(len(bins)-1):
-        mask = (df['node_degree'] >= bins[j]) & (df['node_degree'] < bins[j+1])
-        if mask.any():
-            bin_means.append(df[mask]['hop_latency'].mean())
-            bin_stds.append(df[mask]['hop_latency'].std())
-            bin_centers.append((bins[j] + bins[j+1]) / 2)
-            bin_counts.append(len(df[mask]))
-    
-    bin_means = np.array(bin_means)
-    bin_stds = np.array(bin_stds)
-    bin_centers = np.array(bin_centers)
-    
-    # Plot mean line and standard deviation band
-    ax.plot(bin_centers, bin_means,
-            color='blue',
-            linewidth=2.5)
-    
-    ax.fill_between(bin_centers,
-                    bin_means - bin_stds,
-                    bin_means + bin_stds,
-                    alpha=0.2,
-                    color='blue')
-    
-    # Set more frequent y-axis ticks (every 25 seconds)
-    max_y = max(bin_means + bin_stds) + 25  # Add some padding
-    y_ticks = np.arange(0, max_y, 25)
-    ax.set_yticks(y_ticks)
-    ax.set_yticklabels([f'{y:.0f}' for y in y_ticks])
-    
-    # Customize plot
-    ax.set_xlabel('Node Degree')
-    ax.set_ylabel('Hop Latency (s)')
-    ax.set_title('Node Degree vs Hop Latency (All Communication Ranges)')
-    ax.grid(True, alpha=0.3)
-    
-    # Add statistics in text box
-    stats_text = "Statistics:\n"
-    stats_text += f"Total hops: {len(df):,}\n"
-    stats_text += f"Mean latency: {df['hop_latency'].mean():.2f}s\n\n"
-    stats_text += "By node degree range:\n"
-    
-    degree_ranges = [(0, 10), (11, 20), (21, 30), (31, 40), (41, 50)]
-    for min_deg, max_deg in degree_ranges:
-        mask = (df['node_degree'] >= min_deg) & (df['node_degree'] <= max_deg)
-        if mask.any():
-            mean_lat = df[mask]['hop_latency'].mean()
-            std_lat = df[mask]['hop_latency'].std()
-            count = mask.sum()
-            stats_text += f"Degree {min_deg}-{max_deg}:\n"
-            stats_text += f"  Mean: {mean_lat:.2f}s\n"
-            stats_text += f"  Std Dev: {std_lat:.2f}s\n"
-            stats_text += f"  Sample size: {count:,}\n"
-    
-    # Add sample sizes to plot
-    for x, y, count in zip(bin_centers, bin_means, bin_counts):
-        ax.text(x, y + bin_stds[bin_centers == x][0], 
-                f'n={count:,}',
-                ha='center', va='bottom',
-                fontsize=8)
-    
-    ax.text(1.05, 0.5, stats_text,
-            transform=ax.transAxes,
-            verticalalignment='center',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-            fontsize=9)
-    
-    plt.tight_layout()
-    plt.savefig(f'figures/node_degree_vs_hoplatency_aggregate.png',
-                bbox_inches='tight', dpi=300)
-    plt.close()
-
-def calculate_theoretical_bitrate(message_size: np.floating, distance: np.floating) -> np.floating: 
+def calculate_gini_coefficient(values: list[int]) -> float:
     """
-    Calculate theoretical maximum bitrate based on speed of light limit.
+    Calculate the Gini coefficient for a list of values.
     
-    This represents the absolute physical upper bound for information transmission,
-    assuming instantaneous processing and the speed of light as the only constraint.
+    The Gini coefficient measures inequality in a distribution.
+    Returns a value between 0 (perfect equality) and 1 (perfect inequality).
     
     Args:
-        message_size: Size of the message in bytes
-        distance: Distance the message travels
-    
+        values: List of numeric values (e.g., node degrees)
+        
     Returns:
-        Theoretical maximum bitrate (bytes/second) based on speed of light
+        Gini coefficient (0-1)
     """
-    SPEED_OF_LIGHT = 299792458  # m/s in vacuum
+    # Remove any NaN or infinite values
+    values = [v for v in values if np.isfinite(v)]
     
-    # Time based on speed of light (absolute physical limit)
-    light_time = distance / SPEED_OF_LIGHT
+    if len(values) == 0:
+        return 0.0
     
-    # Ensure minimum time to avoid division by zero
-    total_time = max(float(light_time), 1e-9)  # At least 1 nanosecond
+    sorted_values = np.sort(np.array(values))
+    n = len(sorted_values)
+    
+    # Calculate Gini coefficient
+    # Formula: G = (2 * sum(i * x)) / (n * sum(x)) - (n + 1) / n
+    cumsum = np.cumsum(sorted_values)
+    total = cumsum[-1]
+    
+    if total == 0:
+        return 0.0
+    
+    gini = (2.0 * np.sum((np.arange(1, n + 1) * sorted_values))) / (n * total) - (n + 1.0) / n
+    return gini
 
-    return message_size / total_time
+def calculate_centralization_score(node_degrees: list[int], num_links: int) -> float:
+    """
+    Calculate the centralization score S for a distribution of node degrees.
+    
+    Formula: S = sum((a_i / C)^2) - 1/C
+    where a_i is the node degree of node i, and C is the total number of edges
+    
+    Args:
+        node_degrees: List of node degrees
+        num_links: Number of edges/links between nodes
+        
+    Returns:
+        Centralization score (higher means more centralized)
+    """
+    # Remove any NaN or infinite values
+    degrees = [d for d in node_degrees if np.isfinite(d)]
+    
+    if len(degrees) == 0:
+        return 0.0
 
-def plot_bitrate_vs_distance(messages: list[Message], num_bins=20, remove_outliers=True):
-    """Plot bitrate vs distance - creates both aggregated and per-communication-range plots"""
+    C = num_links if num_links > 0 else 1  # Avoid division by zero
+
+    # Calculate S = sum((a_i / C)^2) - 1/C
+    centralization = sum((a_i / C) ** 2 for a_i in degrees) - (1.0 / C)
+    return centralization
+
+def calculate_l0_norm(degrees: list[float]) -> float:
+    """
+    Calculate the L0 norm (sparsity) of node degrees.
     
-    comm_ranges = sorted(set(msg.communication_range for msg in messages), key=int)
-    all_distances = [msg.distance for msg in messages if msg.distance > 0 and msg.delivery_time > 0]
-    min_dist = min(all_distances)
-    max_dist = max(all_distances)
-    distance_bins = np.linspace(min_dist, max_dist, num_bins)
-    bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
-    distance_range = np.linspace(min_dist, max_dist, 100)
+    The L0 norm counts the number of non-zero elements, indicating how many
+    nodes are actively participating in the network (have at least one connection).
     
-    fig, ax = plt.subplots(figsize=(12, 8))
+    Args:
+        degrees: List of node degrees
+        
+    Returns:
+        Ratio of active nodes (L0 / total nodes), ranging from 0 to 1
+    """
+    # Count non-zero degrees (active nodes)
+    non_zero_count = sum(1 for d in degrees if d > 0)
     
-    data = []
+    # Return as ratio
+    return non_zero_count / len(degrees)
+
+def get_host_distance_matrix(messages: list[Message]):
+    """
+    Create a distance matrix between hosts using actual host coordinates.
+
+    Args:
+        messages: All messages with host coordinate information
+        
+    Returns:
+        Distance_matrix
+    """
+    
+    # Get all unique hosts
+    hosts: dict[int, HostInfo] = {}
     for msg in messages:
-        if msg.distance > 0 and msg.delivery_time > 0:
-            bitrate = msg.size / msg.delivery_time
-            data.append({
-                'Distance': msg.distance,
-                'Bitrate': bitrate,
-            })
+        hosts[int(msg.source_host.host_id.split('_')[-1])] = msg.source_host
+        hosts[int(msg.target_host.host_id.split('_')[-1])] = msg.target_host
+
+    # Convert to sorted list for consistent indexing
+    host_list = sorted(list(hosts))
     
-    df = pd.DataFrame(data)
+    # Initialize distance matrix with NaN (no connection/data)
+    n_hosts = len(host_list)
+    distance_matrix = np.full((n_hosts, n_hosts), np.nan)
     
-    median_bitrates = []
-    q1_bitrates = []
-    q3_bitrates = []
-    bin_counts = []
+    # Calculate distances between all pairs of hosts using coordinates
+    for i, host1_id in enumerate(host_list):
+        host1 = hosts[host1_id]
+        for j, host2_id in enumerate(host_list):
+            host2 = hosts[host2_id]
+            if i != j:
+                distance = host1.distance_to(host2)
+                distance_matrix[i][j] = distance
+            elif i == j:
+                distance_matrix[i][j] = 0.0  # Distance to self is 0
     
-    # Calculate statistics for each bin
-    for i in range(len(distance_bins)-1):
-        mask = (df['Distance'] >= distance_bins[i]) & (df['Distance'] < distance_bins[i+1])
-        bin_data = df[mask]['Bitrate']
+    return distance_matrix
+
+def get_delivery_success_matrix(all_messages: list[Message], delivered_messages: list[Message], time_threshold: float = 10.0):
+    """
+    Create a delivery success probability matrix between hosts for a specific communication mode.
+    
+    Args:
+        all_messages: All created messages
+        delivered_messages: Successfully delivered messages
+        mode: 0 for intra-cluster, 1 for inter-cluster
+        time_threshold: Time threshold for successful delivery
         
-        if len(bin_data) > 0:
-            if remove_outliers:
-                # Remove outliers using IQR method
-                Q1 = bin_data.quantile(0.25)
-                Q3 = bin_data.quantile(0.75)
-                IQR = Q3 - Q1
-                bin_data = bin_data[
-                    (bin_data >= Q1 - 1.5 * IQR) & 
-                    (bin_data <= Q3 + 1.5 * IQR)
-                ]
-            
-            if len(bin_data) > 0:
-                median_bitrates.append(bin_data.median())
-                q1_bitrates.append(bin_data.quantile(0.25))
-                q3_bitrates.append(bin_data.quantile(0.75))
-                bin_counts.append(len(bin_data))
-            else:
-                median_bitrates.append(np.nan)
-                q1_bitrates.append(np.nan)
-                q3_bitrates.append(np.nan)
-                bin_counts.append(0)
-        else:
-            median_bitrates.append(np.nan)
-            q1_bitrates.append(np.nan)
-            q3_bitrates.append(np.nan)
-            bin_counts.append(0)
+    Returns:
+        Tuple of (success_matrix, host_list)
+    """
+
+    # Get all unique hosts that appear in messages
+    hosts: dict[int, HostInfo] = {}
+    for msg in all_messages:
+        # host id is the last number splitting the host id by underscores: random_stationary_clusternumber_id
+        hosts[int(msg.source_host.host_id.split('_')[-1])] = msg.source_host
+        hosts[int(msg.target_host.host_id.split('_')[-1])] = msg.target_host
+
+    n_hosts = len(hosts)
+    total_attempts = np.zeros((n_hosts, n_hosts))
+    successful_deliveries = np.zeros((n_hosts, n_hosts))
     
-    median_bitrates = np.array(median_bitrates)
-    q1_bitrates = np.array(q1_bitrates)
-    q3_bitrates = np.array(q3_bitrates)
+    # Count total attempts
+    for msg in all_messages:
+        source = int(msg.source_host.host_id.split('_')[-1])
+        destination = int(msg.target_host.host_id.split('_')[-1])
+        total_attempts[source, destination] += 1
     
-    # Remove NaN values for plotting
-    valid_mask = ~np.isnan(median_bitrates)
-    valid_centers = bin_centers[valid_mask]
-    valid_medians = median_bitrates[valid_mask]
-    valid_q1 = q1_bitrates[valid_mask]
-    valid_q3 = q3_bitrates[valid_mask]
-    valid_counts = np.array(bin_counts)[valid_mask]
+    delivered_messages_in_t = [msg for msg in delivered_messages if msg.delivery_time <= time_threshold]
+
+    # Count successful deliveries
+    for msg in delivered_messages_in_t:
+        source = int(msg.source_host.host_id.split('_')[-1])
+        destination = int(msg.target_host.host_id.split('_')[-1])
+        successful_deliveries[source, destination] += 1
+
+    # Calculate success probability matrix
+    success_matrix = np.divide(successful_deliveries, total_attempts, 
+                              out=np.zeros_like(successful_deliveries), 
+                              where=total_attempts!=0)
     
-    # Plot median line
-    ax.plot(valid_centers, valid_medians, 
-            color='blue',
-            linewidth=2.5,
-            label='Median achieved bitrate')
+    return success_matrix
+
+def get_topology_matrix_from_connectivity(topology: Topology, n_hosts: int = 72):
+    """
+    Create a topology matrix from connectivity report data.
     
-    # Plot IQR as shaded area
-    ax.fill_between(valid_centers, 
-                   valid_q1, 
-                   valid_q3, 
-                   alpha=0.2,
-                   color='blue',
-                   label='IQR (25th-75th percentile)')
+    Args:
+        topology: Dictionary mapping node_id -> set of neighbor node_ids
+        n_hosts: Number of hosts in the network (default 72)
+        
+    Returns:
+        Binary topology matrix (1 if link exists, 0 otherwise)
+    """
+    topology_matrix = np.zeros((n_hosts, n_hosts))
     
-    # Add theoretical maximum bitrate curve (speed of light upper bound)
-    avg_message_size = np.mean([msg.size for msg in messages])
-    theoretical_bitrates = [calculate_theoretical_bitrate(avg_message_size, d) for d in distance_range]
+    for node_id_str, neighbors in topology.connections.items():
+        node_id = int(node_id_str)
+        for neighbor_str in neighbors:
+            neighbor_id = int(neighbor_str)
+            topology_matrix[node_id, neighbor_id] = 1
     
-    ax.plot(distance_range, theoretical_bitrates,
-            color='red',
-            linewidth=2.0,
-            linestyle='--',
-            label='Theoretical maximum\n(speed of light limit)')
+    return topology_matrix
+
+def load_messages_per_run(all_messages: list[Message], delivered_messages: list[Message], run: int, range_suffix: int, mode: int):
+    """
+    Filter messages for a specific config.
     
-    for x, y, count in zip(valid_centers, valid_medians, valid_counts):
-        ax.text(x, y * 1.1,  # Multiply by 1.1 for log scale positioning
-                f'n={count:,}',
-                ha='center', va='bottom',
-                fontsize=8)
+    Args:
+        all_messages: List of all messages
+        delivered_messages: List of delivered messages
+        run: Run number
+        range_suffix: Communication range
+        mode: Mode (0 for intra, 1 for inter)
+        
+    Returns:
+        Tuple of (all_messages, delivered_messages) for this specific run
+    """
+
+    all_messages_per_config = [msg for msg in all_messages if msg.run == run and msg.communication_range == range_suffix and msg.mode == mode]
+    delivered_messages_per_config = [msg for msg in delivered_messages if msg.run == run and msg.communication_range == range_suffix and msg.mode == mode]
+
+    return all_messages_per_config, delivered_messages_per_config
+
+def plot_max_degree_vs_throughput(delivered_messages: list[Message]):
+    """Plot maximum allowed node degree vs achieved throughput, with one curve per communication radius: """
     
-    ax.set_xlabel('Distance (m)')
-    ax.set_ylabel('Bitrate (bytes/second)')
-    ax.set_title('Bitrate vs Distance: Achieved vs Theoretical Maximum (Aggregated)')
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    ax.set_yscale('log')
+    # Group by communication_range and max_degree
+    throughput_data: dict[Configuration, list[float]] = defaultdict(list)
+    for msg in delivered_messages:
+        key = Configuration(mode=msg.mode, range=msg.communication_range, max_degree=msg.max_degree, run_randomize_seed=1)
+        if key not in throughput_data:
+            throughput_data[key] = []
+        # if msg.delivery_time > 0:
+            throughput = msg.size / msg.delivery_time
+            throughput_data[key].append(throughput)
     
+    # Calculate Mean throughput per group
+    modes = sorted(set(k.mode for k in throughput_data.keys()))
+    ranges = sorted(set(k.range for k in throughput_data.keys()))
+    max_degrees = sorted(set(k.max_degree for k in throughput_data.keys()))
+    
+
+    for mode in modes:
+        for comm_range in ranges:
+            available_degrees = [k.max_degree for k in throughput_data.keys() 
+                            if k.mode == mode and k.range == comm_range]
+            print(f"Mode {mode}, Range {comm_range}m: degrees {sorted(set(available_degrees))}")
+
+    colors: list[str] = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+    
+    # Create vertical layout (2 rows, 1 column)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+    
+    # Intra-cluster subplot (top)
+    for range_idx, comm_range in enumerate(ranges):
+        x_vals = []
+        y_vals = []
+        for max_deg in max_degrees:
+            key = (0, comm_range, max_deg)
+            if key in throughput_data and throughput_data[key]:
+                avg_throughput = np.mean(throughput_data[key])
+                x_vals.append(max_deg)
+                y_vals.append(avg_throughput)
+        
+        if x_vals:
+            ax1.plot(x_vals, y_vals, marker=markers[range_idx % len(markers)], 
+                    linestyle='-', label=f'Range {comm_range}m', 
+                    linewidth=2, markersize=8, color=colors[range_idx])
+    
+    # No x-axis label on top subplot
+    ax1.set_ylabel('Mean Throughput (bytes/second)')
+    ax1.set_title('Intra-cluster')
+    ax1.grid(True, alpha=0.3)
+    
+    # Inter-cluster subplot (bottom)
+    for range_idx, comm_range in enumerate(ranges):
+        x_vals = []
+        y_vals = []
+        for max_deg in max_degrees:
+            key = (1, comm_range, max_deg)
+            if key in throughput_data and throughput_data[key]:
+                avg_throughput = np.mean(throughput_data[key])
+                x_vals.append(max_deg)
+                y_vals.append(avg_throughput)
+        
+        if x_vals:
+            ax2.plot(x_vals, y_vals, marker=markers[range_idx % len(markers)], 
+                    linestyle='-', label=f'Range {comm_range}m', 
+                    linewidth=2, markersize=8, color=colors[range_idx])
+    
+    ax2.set_xlabel('Maximum Allowed Node Degree')
+    ax2.set_ylabel('Mean Throughput (bytes/second)')
+    ax2.set_title('Inter-cluster')
+    ax2.grid(True, alpha=0.3)
+    
+    # Create shared legend below both subplots
+    handles, labels = ax1.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.05), ncol=4, frameon=True)
+    
+    # Adjust layout to make room for legend
     plt.tight_layout()
-    plt.savefig('figures/bitrate_vs_distance_aggregate.png', 
-                bbox_inches='tight', dpi=300)
+    plt.subplots_adjust(bottom=0.15)
+    
+    plt.savefig('figures/max_degree_vs_throughput.png', dpi=300, bbox_inches='tight')
     plt.close()
+
+# def plot_metrics_vs_max_degree(delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
+#     """
+#     Plot Gini coefficient, centralization score, and L0 norm vs max node degree,
+#     split by mode (intra/inter-cluster), with one curve for each communication range.
     
-    fig, ax = plt.subplots(figsize=(12, 8))
-    colors = plt.cm.viridis(np.linspace(0, 1, len(comm_ranges)))
+#     Each randomized run is treated as an individual data point, showing the natural
+#     variation in centralization metrics across different random topologies.
     
-    for i, comm_range in enumerate(comm_ranges):
-        # Filter messages for this communication range
-        range_messages = [msg for msg in messages 
-                        if msg.communication_range == comm_range and msg.distance > 0 and msg.delivery_time > 0]
-        
-        if not range_messages:
-            continue
+#     Creates 6 subplots (3x2 grid):
+#     - Top row: Gini coefficient (intra, inter)
+#     - Middle row: Centralization score S (intra, inter)
+#     - Bottom row: L0 norm / sparsity (intra, inter)
+#     """
+#     TOTAL_NODES = 72
+    
+#     # Get all available runs with randomized topologies
+#     randomized_runs = sorted(set(
+#         config.run_number 
+#         for config in topologies.keys() 
+#         if config.run_randomize_seed == 1
+#     ))
+    
+#     if not randomized_runs:
+#         print("Warning: No randomized topologies found. Falling back to non-randomized (run=1).")
+#         randomized_runs = [1]
+    
+#     # Collect individual data points (one per run)
+#     data_points = []
+    
+#     config_keys = set()
+#     for msg in delivered_messages:
+#         config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
+    
+#     for mode, comm_range, max_deg in config_keys:
+#         for run_num in randomized_runs:
+#             config = ConfigurationWithRun(
+#                 run_number=run_num, 
+#                 range=comm_range, 
+#                 max_degree=max_deg, 
+#                 mode=mode,
+#                 run_randomize_seed=1
+#             )
+#             topology = topologies.get(config)
             
-        # Create DataFrame for this communication range
-        range_data = []
-        for msg in range_messages:
-            bitrate = msg.size / msg.delivery_time
-            range_data.append({
-                'Distance': msg.distance,
-                'Bitrate': bitrate,
-            })
-        
-        df_range = pd.DataFrame(range_data)
-        
-        median_bitrates = []
-        q1_bitrates = []
-        q3_bitrates = []
-        
-        # Calculate statistics for each bin
-        for j in range(len(distance_bins)-1):
-            mask = (df_range['Distance'] >= distance_bins[j]) & (df_range['Distance'] < distance_bins[j+1])
-            bin_data = df_range[mask]['Bitrate']
+#             if topology is None:
+#                 continue
             
-            if len(bin_data) > 0:
-                if remove_outliers:
-                    # Remove outliers using IQR method
-                    Q1 = bin_data.quantile(0.25)
-                    Q3 = bin_data.quantile(0.75)
-                    IQR = Q3 - Q1
-                    bin_data = bin_data[
-                        (bin_data >= Q1 - 1.5 * IQR) & 
-                        (bin_data <= Q3 + 1.5 * IQR)
-                    ]
+#             # Extract degrees for ALL nodes from the topology
+#             degrees_list = []
+#             for node_id in range(TOTAL_NODES):
+#                 node_name = str(node_id)
+#                 if node_name in topology.connections:
+#                     degrees_list.append(len(topology.connections[node_name]))
+#                 else:
+#                     degrees_list.append(0)  # Isolated node
+            
+#             # Calculate all metrics for this run
+#             gini_coef = calculate_gini_coefficient(degrees_list)
+#             num_links = topology.get_number_of_links()
+#             s_score = calculate_centralization_score(degrees_list, num_links)
+#             l0_norm = calculate_l0_norm(degrees_list)
+            
+#             data_points.append({
+#                 'mode': mode,
+#                 'comm_range': comm_range,
+#                 'max_degree': max_deg,
+#                 'run': run_num,
+#                 'gini': gini_coef,
+#                 's_score': s_score,
+#                 'l0_norm': l0_norm
+#             })
+    
+#     modes = sorted(set(d['mode'] for d in data_points))
+#     ranges = sorted(set(d['comm_range'] for d in data_points))
+#     max_degrees = sorted(set(d['max_degree'] for d in data_points))
+#     modes = sorted(set(d['mode'] for d in data_points))
+#     ranges = sorted(set(d['comm_range'] for d in data_points))
+#     max_degrees = sorted(set(d['max_degree'] for d in data_points))
+    
+#     # Create 3x2 subplot grid
+#     fig, axes = plt.subplots(3, 2, figsize=(16, 18))
+    
+#     mode_names = {0: 'Intra-cluster', 1: 'Inter-cluster'}
+#     colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+#     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+    
+#     # Plot Gini coefficient (top row)
+#     for mode_idx, mode in enumerate(modes):
+#         ax = axes[0, mode_idx]
+        
+#         for range_idx, comm_range in enumerate(ranges):
+#             # Filter points for this mode and range
+#             points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+            
+#             if not points:
+#                 continue
+            
+#             # Group by max_degree
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['gini'])
+            
+#             # Calculate statistics for each max_degree
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
+            
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
+            
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors[range_idx])
+        
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Gini Coefficient', fontsize=12)
+#         ax.set_title(f'Gini Coefficient', fontsize=14)
+#         ax.set_ylim(0, 1)  # Gini coefficient ranges from 0 to 1
+#         ax.grid(True, alpha=0.3)
+    
+#     # Plot Centralization Score (middle row)
+#     for mode_idx, mode in enumerate(modes):
+#         ax = axes[1, mode_idx]
+        
+#         for range_idx, comm_range in enumerate(ranges):
+#             # Filter points for this mode and range
+#             points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+            
+#             if not points:
+#                 continue
+            
+#             # Group by max_degree
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['s_score'])
+            
+#             # Calculate statistics for each max_degree
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
+            
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
+            
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors[range_idx])
+        
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Centralization Score S', fontsize=12)
+#         ax.set_title(f'Centralization Score', fontsize=14)
+#         ax.grid(True, alpha=0.3)
+    
+#     # Plot L0 Norm (bottom row)
+#     for mode_idx, mode in enumerate(modes):
+#         ax = axes[2, mode_idx]
+        
+#         for range_idx, comm_range in enumerate(ranges):
+#             # Filter points for this mode and range
+#             points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+            
+#             if not points:
+#                 continue
+            
+#             # Group by max_degree
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['l0_norm'])
+            
+#             # Calculate statistics for each max_degree
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
+            
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
+            
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors[range_idx])
+        
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('L0 Norm (Active Node Ratio)', fontsize=12)
+#         ax.set_title(f'Network Sparsity (L0)', fontsize=14)
+#         ax.set_ylim(0, 1.05)  # L0 ratio ranges from 0 to 1
+#         ax.grid(True, alpha=0.3)
+    
+#     # Add shared legend below all subplots
+#     handles, labels = axes[0, 0].get_legend_handles_labels()
+#     fig.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
+#                ncol=min(len(labels), 5), fontsize=11, frameon=True)
+    
+#     plt.tight_layout(rect=[0, 0.03, 1, 1])
+
+#     # Split versions by distance range
+#     low_ranges = [r for r in ranges if r <= 40]
+#     high_ranges = [r for r in ranges if r >= 50]
+    
+#     # Function to plot for a specific distance range
+#     def plot_for_distance_range(distance_ranges, range_label, filename_suffix, use_log_gini=False):
+#         """Helper function to create plots for a specific distance range
+        
+#         Args:
+#             distance_ranges: List of communication ranges to plot
+#             range_label: Label for the distance range (e.g., "Low Distances: ≤40m")
+#             filename_suffix: Suffix for the output filename (e.g., "low_dist")
+#             use_log_gini: If True, use log scale for Gini coefficient y-axis
+#         """
+#         if not distance_ranges:
+#             return
+            
+#         colors_local = plt.cm.viridis(np.linspace(0, 1, len(distance_ranges)))
+        
+#         # Plot 1: All metrics (3x2 grid) for this distance range
+#         fig1, axes1 = plt.subplots(3, 2, figsize=(16, 18))
+        
+#         # Gini coefficient (top row)
+#         for mode_idx, mode in enumerate(modes):
+#             ax = axes1[0, mode_idx]
+            
+#             for range_idx, comm_range in enumerate(distance_ranges):
+#                 points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
                 
-                if len(bin_data) > 0:
-                    median_bitrates.append(bin_data.median())
-                    q1_bitrates.append(bin_data.quantile(0.25))
-                    q3_bitrates.append(bin_data.quantile(0.75))
-                else:
-                    median_bitrates.append(np.nan)
-                    q1_bitrates.append(np.nan)
-                    q3_bitrates.append(np.nan)
-            else:
-                median_bitrates.append(np.nan)
-                q1_bitrates.append(np.nan)
-                q3_bitrates.append(np.nan)
-        
-        median_bitrates = np.array(median_bitrates)
-        q1_bitrates = np.array(q1_bitrates)
-        q3_bitrates = np.array(q3_bitrates)
-        
-        valid_mask = ~np.isnan(median_bitrates)
-        valid_centers = bin_centers[valid_mask]
-        valid_medians = median_bitrates[valid_mask]
-        valid_q1 = q1_bitrates[valid_mask]
-        valid_q3 = q3_bitrates[valid_mask]
-        
-        if len(valid_centers) == 0:
-            continue
+#                 if not points:
+#                     continue
+                
+#                 degree_groups = {}
+#                 for point in points:
+#                     max_deg = point['max_degree']
+#                     if max_deg not in degree_groups:
+#                         degree_groups[max_deg] = []
+#                     degree_groups[max_deg].append(point['gini'])
+                
+#                 x_vals = []
+#                 y_vals = []
+#                 y_stds = []
+                
+#                 for max_deg in sorted(degree_groups.keys()):
+#                     x_vals.append(max_deg)
+#                     y_vals.append(np.mean(degree_groups[max_deg]))
+#                     y_stds.append(np.std(degree_groups[max_deg]))
+                
+#                 if x_vals:
+#                     ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                                marker=markers[range_idx % len(markers)], 
+#                                markersize=8,
+#                                linewidth=2,
+#                                capsize=5,
+#                                capthick=2,
+#                                label=f'{int(comm_range)}m range',
+#                                color=colors_local[range_idx])
             
-        # Plot median line for this communication range
-        ax.plot(valid_centers, valid_medians, 
-                color=colors[i],
-                linewidth=2.5,
-                label=f'{int(comm_range)}m range (median)')
+#             ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#             ax.set_ylabel('Gini Coefficient', fontsize=12)
+#             ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
+#             if use_log_gini:
+#                 ax.set_yscale('log')
+#                 ax.set_ylim(0.001, 1)
+#             else:
+#                 ax.set_ylim(0, 1)
+#             ax.grid(True, alpha=0.3)
         
-        # Plot IQR as shaded area
-        ax.fill_between(valid_centers, 
-                       valid_q1, 
-                       valid_q3, 
-                       alpha=0.15,
-                       color=colors[i])
-    
-    # Add single theoretical maximum bitrate curve (speed of light upper bound)
-    # Use average message size across all communication ranges for consistency
-    avg_message_size = np.mean([msg.size for msg in messages])
-    theoretical_bitrates = [calculate_theoretical_bitrate(avg_message_size, d) for d in distance_range]
-    
-    ax.plot(distance_range, theoretical_bitrates,
-            color='red',
-            linewidth=2.0,
-            linestyle='--',
-            label='Theoretical maximum\n(speed of light limit)')
-    
-    ax.set_xlabel('Distance (m)')
-    ax.set_ylabel('Bitrate (bytes/second)')
-    ax.set_title('Bitrate vs Distance by Communication Range: Achieved vs Theoretical')
-    ax.grid(True, alpha=0.3)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', 
-              fontsize=9, framealpha=0.9)
-    ax.set_yscale('log')
-    
-    plt.tight_layout()
-    plt.savefig('figures/bitrate_vs_distance_by_range.png', 
-                bbox_inches='tight', dpi=300)
-    plt.close()
-
-def plot_node_degree_vs_communication_radius(messages: list[Message]):
-    """Plot relationship between communication range and node degree (aggregated)"""
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    # Extract data for all hops
-    data = []
-    for msg in messages:
-        if msg.hops:
-            for hop in msg.hops:
-                if hop.hop_time > 0:
-                    data.append({
-                        'node_degree': hop.from_node_degree,
-                        'communication_range': msg.communication_range
-                    })
-    
-    df = pd.DataFrame(data)
-    
-    # Get unique communication ranges and calculate statistics
-    comm_ranges = sorted(df['communication_range'].unique(), key=int)
-    mean_degrees = []
-    std_degrees = []
-    median_degrees = []
-    q1_degrees = []
-    q3_degrees = []
-    sample_counts = []
-    
-    for comm_range in comm_ranges:
-        range_data = df[df['communication_range'] == comm_range]['node_degree']
+#         # Centralization Score (middle row)
+#         for mode_idx, mode in enumerate(modes):
+#             ax = axes1[1, mode_idx]
+            
+#             for range_idx, comm_range in enumerate(distance_ranges):
+#                 points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+                
+#                 if not points:
+#                     continue
+                
+#                 degree_groups = {}
+#                 for point in points:
+#                     max_deg = point['max_degree']
+#                     if max_deg not in degree_groups:
+#                         degree_groups[max_deg] = []
+#                     degree_groups[max_deg].append(point['s_score'])
+                
+#                 x_vals = []
+#                 y_vals = []
+#                 y_stds = []
+                
+#                 for max_deg in sorted(degree_groups.keys()):
+#                     x_vals.append(max_deg)
+#                     y_vals.append(np.mean(degree_groups[max_deg]))
+#                     y_stds.append(np.std(degree_groups[max_deg]))
+                
+#                 if x_vals:
+#                     ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                                marker=markers[range_idx % len(markers)], 
+#                                markersize=8,
+#                                linewidth=2,
+#                                capsize=5,
+#                                capthick=2,
+#                                label=f'{int(comm_range)}m range',
+#                                color=colors_local[range_idx])
+            
+#             ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#             ax.set_ylabel('Centralization Score S', fontsize=12)
+#             ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
+#             ax.grid(True, alpha=0.3)
         
-        mean_degrees.append(range_data.mean())
-        std_degrees.append(range_data.std())
-        median_degrees.append(range_data.median())
-        q1_degrees.append(range_data.quantile(0.25))
-        q3_degrees.append(range_data.quantile(0.75))
-        sample_counts.append(len(range_data))
-    
-    mean_degrees = np.array(mean_degrees)
-    std_degrees = np.array(std_degrees)
-    median_degrees = np.array(median_degrees)
-    q1_degrees = np.array(q1_degrees)
-    q3_degrees = np.array(q3_degrees)
-    
-    # Plot median line with IQR band
-    ax.plot(comm_ranges, median_degrees, 
-            color='red', 
-            linewidth=2, 
-            linestyle='--',
-            marker='s', 
-            markersize=6,
-            label='Median node degree')
-    
-    ax.fill_between(comm_ranges, 
-                   q1_degrees, 
-                   q3_degrees, 
-                   alpha=0.15, 
-                   color='red',
-                   label='IQR (25th-75th percentile)')
-    
-    # Add sample size annotations
-    for x, y, count in zip(comm_ranges, mean_degrees, sample_counts):
-        ax.text(x, y + 0.1, 
-                f'n={count:,}',
-                ha='center', va='bottom',
-                fontsize=8,
-                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
-    
-    ax.set_xlabel('Communication Range (m)', fontsize=12)
-    ax.set_ylabel('Node Degree', fontsize=12)
-    ax.set_title('Node Degree vs. Communication Range', fontsize=14)
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper left', fontsize=10, framealpha=0.9)
-    
-    plt.tight_layout()
-    plt.savefig('figures/node_degree_vs_communication_radius.png', 
-                bbox_inches='tight', dpi=300)
-    plt.close()
+#         # L0 Norm (bottom row)
+#         for mode_idx, mode in enumerate(modes):
+#             ax = axes1[2, mode_idx]
+            
+#             for range_idx, comm_range in enumerate(distance_ranges):
+#                 points = [d for d in data_points if d['mode'] == mode and d['comm_range'] == comm_range]
+                
+#                 if not points:
+#                     continue
+                
+#                 degree_groups = {}
+#                 for point in points:
+#                     max_deg = point['max_degree']
+#                     if max_deg not in degree_groups:
+#                         degree_groups[max_deg] = []
+#                     degree_groups[max_deg].append(point['l0_norm'])
+                
+#                 x_vals = []
+#                 y_vals = []
+#                 y_stds = []
+                
+#                 for max_deg in sorted(degree_groups.keys()):
+#                     x_vals.append(max_deg)
+#                     y_vals.append(np.mean(degree_groups[max_deg]))
+#                     y_stds.append(np.std(degree_groups[max_deg]))
+                
+#                 if x_vals:
+#                     ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                                marker=markers[range_idx % len(markers)], 
+#                                markersize=8,
+#                                linewidth=2,
+#                                capsize=5,
+#                                capthick=2,
+#                                label=f'{int(comm_range)}m range',
+#                                color=colors_local[range_idx])
+            
+#             ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#             ax.set_ylabel('L0 Norm (Active Node Ratio)', fontsize=12)
+#             ax.set_title(f'{mode_names[mode_idx]}', fontsize=14)
+#             ax.set_ylim(0, 1.05)
+#             ax.grid(True, alpha=0.3)
 
-def plot_node_degree_vs_hop_count(messages: list[Message]):
-    """Plot relationship between node degree and hop count (aggregated)"""
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    # Extract data for each hop along message paths
-    data = []
-    for msg in messages:
-        if msg.hops and len(msg.hops) > 0:
-            total_hops = len(msg.hops)
-            for hop in msg.hops:
-                if hop.hop_time > 0:
-                    data.append({
-                        'node_degree': hop.from_node_degree,
-                        'hop_count': total_hops
-                    })
-    
-    df = pd.DataFrame(data)
-    
-    # Create node degree bins
-    degree_bins = np.arange(0, 51, 5)  # 0-50 in steps of 5
-    median_hops = []
-    q1_hops = []
-    q3_hops = []
-    bin_centers = []
-    sample_counts = []
-    
-    for i in range(len(degree_bins)-1):
-        mask = (df['node_degree'] >= degree_bins[i]) & (df['node_degree'] < degree_bins[i+1])
-        if mask.any():
-            bin_data = df[mask]['hop_count']
-            median_hops.append(bin_data.median())
-            q1_hops.append(bin_data.quantile(0.25))
-            q3_hops.append(bin_data.quantile(0.75))
-            bin_centers.append((degree_bins[i] + degree_bins[i+1]) / 2)
-            sample_counts.append(len(bin_data))
-    
-    median_hops = np.array(median_hops)
-    q1_hops = np.array(q1_hops)
-    q3_hops = np.array(q3_hops)
-    bin_centers = np.array(bin_centers)
-    
-    # Plot median line with IQR band
-    ax.plot(bin_centers, median_hops, 
-            color='blue', 
-            linewidth=3, 
-            marker='o', 
-            markersize=8,
-            label='Median hop count')
-    
-    ax.fill_between(bin_centers, 
-                   q1_hops, 
-                   q3_hops, 
-                   alpha=0.2, 
-                   color='blue',
-                   label='IQR (25th-75th percentile)')
-    
-    # Add sample size annotations
-    for x, y, count in zip(bin_centers, median_hops, sample_counts):
-        ax.text(x, y + 0.1, 
-                f'n={count:,}',
-                ha='center', va='bottom',
-                fontsize=8,
-                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
-    
-    ax.set_xlabel('Node Degree', fontsize=12)
-    ax.set_ylabel('Hop Count', fontsize=12)
-    ax.set_title('Node Degree vs Hop Count (Aggregated)', fontsize=14)
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
-    
-    plt.tight_layout()
-    plt.savefig('figures/node_degree_vs_hop_count.png',
-                bbox_inches='tight', dpi=300)
-    plt.close()
+#         # Add shared legend below all subplots
+#         handles, labels = axes1[0, 0].get_legend_handles_labels()
+#         fig1.legend(handles, labels, loc='lower center', bbox_to_anchor=(0.5, -0.02), 
+#                    ncol=min(len(labels), 5), fontsize=11, frameon=True)
 
-def plot_hop_latency_vs_communication_radius(messages: list[Message]):
-    """Plot relationship between hop latency and communication radius as smooth aggregated line"""
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    # Extract data for all hops
-    data = []
-    for msg in messages:
-        if msg.hops:
-            for hop in msg.hops:
-                if hop.hop_time > 0:
-                    data.append({
-                        'hop_latency': hop.hop_time,
-                        'communication_range': msg.communication_range
-                    })
-    
-    df = pd.DataFrame(data)
-    
-    # Get unique communication ranges and calculate statistics
-    comm_ranges = sorted(df['communication_range'].unique(), key=int)
-    mean_latencies = []
-    std_latencies = []
-    median_latencies = []
-    q1_latencies = []
-    q3_latencies = []
-    sample_counts = []
-    
-    for comm_range in comm_ranges:
-        range_data = df[df['communication_range'] == comm_range]['hop_latency']
+#         plt.tight_layout(rect=[0, 0.03, 1, 1])
+#         plt.savefig(f'figures/centralization_metrics_vs_max_degree_all_metrics_{filename_suffix}.png', 
+#                     dpi=300, bbox_inches='tight')
+#         plt.close()
         
-        mean_latencies.append(range_data.mean())
-        std_latencies.append(range_data.std())
-        median_latencies.append(range_data.median())
-        q1_latencies.append(range_data.quantile(0.25))
-        q3_latencies.append(range_data.quantile(0.75))
-        sample_counts.append(len(range_data))
+#         # Plot 2: Intra-cluster only (Gini + S-score)
+#         fig2, axes2 = plt.subplots(2, 1, figsize=(5, 7))
+        
+#         # Gini coefficient
+#         ax = axes2[0]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 0 and d['comm_range'] == comm_range]
+            
+#             if not points:
+#                 continue
+            
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['gini'])
+            
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
+            
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
+            
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
+        
+#         ax.set_ylabel('Gini Coefficient', fontsize=12)
+        
+#         if use_log_gini:
+#             ax.set_yscale('log')
+#             ax.set_ylim(0.001, 1)
+#         else:
+#             ax.set_ylim(0, 1)
+#         ax.grid(True, alpha=0.3)
+        
+#         # S-score
+#         ax = axes2[1]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 0 and d['comm_range'] == comm_range]
+            
+#             if not points:
+#                 continue
+            
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['s_score'])
+            
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
+            
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
+            
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
+        
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Centralization Score S', fontsize=12)
+#         ax.grid(True, alpha=0.3)
+        
+#         # Add shared legend below the plots
+#         handles, labels = axes2[1].get_legend_handles_labels()
+#         fig2.legend(handles, labels, loc='lower center', ncol=min(len(labels), 4), 
+#                    bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
+        
+#         plt.tight_layout(rect=[0, 0.03, 1, 1])
+#         plt.savefig(f'figures/centralization_metrics_vs_max_degree_intra_{filename_suffix}.png', 
+#                     dpi=300, bbox_inches='tight')
+#         plt.close()
+        
+#         # Plot 3: Inter-cluster only (Gini + S-score)
+#         fig3, axes3 = plt.subplots(2, 1, figsize=(5, 9))
+        
+#         # Gini coefficient
+#         ax = axes3[0]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 1 and d['comm_range'] == comm_range]
+            
+#             if not points:
+#                 continue
+            
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['gini'])
+            
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
+            
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
+            
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
+        
+#         ax.set_ylabel('Gini Coefficient', fontsize=12)
+        
+#         if use_log_gini:
+#             ax.set_yscale('log')
+#             ax.set_ylim(0.001, 1)
+#         else:
+#             ax.set_ylim(0, 1)
+#         ax.grid(True, alpha=0.3)
+        
+#         # S-score
+#         ax = axes3[1]
+#         for range_idx, comm_range in enumerate(distance_ranges):
+#             points = [d for d in data_points if d['mode'] == 1 and d['comm_range'] == comm_range]
+            
+#             if not points:
+#                 continue
+            
+#             degree_groups = {}
+#             for point in points:
+#                 max_deg = point['max_degree']
+#                 if max_deg not in degree_groups:
+#                     degree_groups[max_deg] = []
+#                 degree_groups[max_deg].append(point['s_score'])
+            
+#             x_vals = []
+#             y_vals = []
+#             y_stds = []
+            
+#             for max_deg in sorted(degree_groups.keys()):
+#                 x_vals.append(max_deg)
+#                 y_vals.append(np.mean(degree_groups[max_deg]))
+#                 y_stds.append(np.std(degree_groups[max_deg]))
+            
+#             if x_vals:
+#                 ax.errorbar(x_vals, y_vals, yerr=y_stds,
+#                            marker=markers[range_idx % len(markers)], 
+#                            markersize=8,
+#                            linewidth=2,
+#                            capsize=5,
+#                            capthick=2,
+#                            label=f'{int(comm_range)}m range',
+#                            color=colors_local[range_idx])
+        
+#         ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+#         ax.set_ylabel('Centralization Score S', fontsize=12)
+#         ax.grid(True, alpha=0.3)
+        
+#         # Add shared legend below the plots
+#         handles, labels = axes3[1].get_legend_handles_labels()
+#         fig3.legend(handles, labels, loc='lower center', ncol=min(len(labels), 3), 
+#                    bbox_to_anchor=(0.5, -0.02), fontsize=11, frameon=True)
+        
+#         plt.tight_layout(rect=[0, 0.03, 1, 1])
+#         plt.savefig(f'figures/centralization_metrics_vs_max_degree_inter_{filename_suffix}.png', 
+#                     dpi=300, bbox_inches='tight')
+#         plt.close()
+#         # GOOD PLOT
     
-    mean_latencies = np.array(mean_latencies)
-    std_latencies = np.array(std_latencies)
-    median_latencies = np.array(median_latencies)
-    q1_latencies = np.array(q1_latencies)
-    q3_latencies = np.array(q3_latencies)
-    
-    # Plot median line with IQR band
-    ax.plot(comm_ranges, median_latencies, 
-            color='red', 
-            linewidth=2, 
-            linestyle='--',
-            marker='s', 
-            markersize=6,
-            label='Median hop latency')
-    
-    ax.fill_between(comm_ranges, 
-                   q1_latencies, 
-                   q3_latencies, 
-                   alpha=0.15, 
-                   color='red',
-                   label='IQR (25th-75th percentile)')
-    
-    ax.set_xlabel('Communication Range (m)', fontsize=12)
-    ax.set_ylabel('Hop Latency (s)', fontsize=12)
-    ax.set_title('Median Hop Latency vs. Communication Range', fontsize=14)
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig('figures/hop_latency_vs_communication_radius.png',
-                bbox_inches='tight', dpi=300)
-    plt.close()
+#     plot_for_distance_range(low_ranges, "Low Distances: ≤40m", "low_dist", use_log_gini=False)
+#     plot_for_distance_range(high_ranges, "High Distances: 50-100m", "high_dist", use_log_gini=False)
 
-def plot_hop_latency_vs_node_degree(messages: list[Message]):
-    """Plot relationship between hop latency and node degree"""
-    fig, ax = plt.subplots(figsize=(12, 8))
+def plot_max_degree_vs_throughput_run_comparison(delivered_messages: list[Message], n: int = 20):
+    """
+    Plot node degree vs throughput for mode 0 (intra-cluster), comparing:
+    - Single run (run 1) data
+    - Aggregated normalized data from n runs
+    """
     
-    # Extract data for all hops
-    data = []
-    for msg in messages:
-        if msg.hops:
-            for hop in msg.hops:
-                if hop.hop_time > 0:
-                    data.append({
-                        'hop_latency': hop.hop_time,
-                        'node_degree': hop.from_node_degree
-                    })
+    # Separate messages by run
+    runs_data = {}
+    for msg in delivered_messages:
+        if msg.mode != 0:  # Only mode 0 (intra-cluster)
+            continue
+        
+        run = msg.run
+        if run not in runs_data:
+            runs_data[run] = []
+        
+        # if msg.delivery_time > 0:
+            throughput = msg.size / msg.delivery_time
+            runs_data[run].append({
+                'max_degree': msg.max_degree,
+                'comm_range': msg.communication_range,
+                'throughput': throughput
+            })
     
-    df = pd.DataFrame(data)
-    
-    degree_bins = np.arange(0, 51, 5)
-    median_latencies = []
-    q1_latencies = []
-    q3_latencies = []
-    bin_centers = []
-    sample_counts = []
-    
-    for i in range(len(degree_bins)-1):
-        mask = (df['node_degree'] >= degree_bins[i]) & (df['node_degree'] < degree_bins[i+1])
-        if mask.any():
-            bin_data = df[mask]['hop_latency']
-            median_latencies.append(bin_data.median())
-            q1_latencies.append(bin_data.quantile(0.25))
-            q3_latencies.append(bin_data.quantile(0.75))
-            bin_centers.append((degree_bins[i] + degree_bins[i+1]) / 2)
-            sample_counts.append(len(bin_data))
-    
-    median_latencies = np.array(median_latencies)
-    q1_latencies = np.array(q1_latencies)
-    q3_latencies = np.array(q3_latencies)
-    bin_centers = np.array(bin_centers)
-    
-    # Plot median line with IQR band
-    ax.plot(bin_centers, median_latencies,
-            color='blue',
-            linewidth=3,
-            marker='o',
-            markersize=8,
-            label='Median hop latency')
-    
-    ax.fill_between(bin_centers, 
-                   q1_latencies, 
-                   q3_latencies, 
-                   alpha=0.2, 
-                   color='blue',
-                   label='IQR (25th-75th percentile)')
-    
-    # Add sample size annotations
-    for x, y, count in zip(bin_centers, median_latencies, sample_counts):
-        ax.text(x, y + 1, 
-                f'n={count:,}',
-                ha='center', va='bottom',
-                fontsize=8,
-                bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
-    
-    ax.set_xlabel('Node Degree', fontsize=12)
-    ax.set_ylabel('Hop Latency (s)', fontsize=12)
-    ax.set_title('Hop Latency vs. Node Degree', fontsize=14)
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
-    
-    plt.tight_layout()
-    plt.savefig('figures/hop_latency_vs_node_degree.png',
-                bbox_inches='tight', dpi=300)
-    plt.close()
-
-def plot_correlation_heatmap(messages: list[Message]):
-    data = []
-    for msg in messages:
-        if msg.hops:
-            for hop in msg.hops:
-                data.append({
-                    'Communication_Range': msg.communication_range,
-                    'Total_Distance': msg.distance,
-                    'Total_Hops': len(msg.hops),
-                    'Total_Latency': msg.delivery_time,
-                    'Hop_Latency': hop.hop_time,
-                    'Node_Degree': hop.from_node_degree,
-                })
-    
-    df = pd.DataFrame(data)
-    
-    df = df.replace([np.inf, -np.inf], np.nan)
-    df = df.dropna()
-    
-    correlation_matrix = df.corr()
-    
-    fig, ax = plt.subplots(figsize=(12, 10))
-    im = ax.imshow(correlation_matrix.values, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
-    cbar = plt.colorbar(im)
-    cbar.set_label('Correlation Coefficient', rotation=270, labelpad=20)
-    
-    # Set ticks and labels
-    ax.set_xticks(range(len(correlation_matrix.columns)))
-    ax.set_yticks(range(len(correlation_matrix.columns)))
-    ax.set_xticklabels(correlation_matrix.columns, rotation=45, ha='right')
-    ax.set_yticklabels(correlation_matrix.columns)
-    
-    # Add correlation values as text annotations
-    for i in range(len(correlation_matrix.columns)):
-        for j in range(len(correlation_matrix.columns)):
-            value = correlation_matrix.iloc[i, j]
-            color = 'black'
-            ax.text(j, i, f'{value:.3f}', 
-                   ha='center', va='center',
-                   color=color, fontweight='bold', 
-                   fontsize=10)
-    
-    plt.title('Correlation Matrix: Network Factors vs Latency', pad=20, fontsize=14, fontweight='bold')
-    
-    plt.tight_layout()
-    plt.savefig(f'figures/correlation_heatmap.png', bbox_inches='tight', dpi=300)
-    plt.close()
-
-def plot_message_frequency_by_distance(messages: list[Message], num_bins=20):
-    """Plot frequency of created messages per distance with mode analysis"""
-    # Create a figure with subplots: original plot + mode comparison
-    fig = plt.figure(figsize=(16, 12))
-    
-    # Extract distances from all messages (including failed deliveries)
-    distances = [msg.distance for msg in messages if msg.distance > 0]
-    
-    if not distances:
-        print("No valid distance data found for message frequency plot")
+    if not runs_data:
+        print("No mode 0 data found for run comparison")
         return
     
-    min_dist = min(distances)
-    max_dist = max(distances)
-    distance_bins = np.linspace(min_dist, max_dist, num_bins + 1)
-    bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
-    bin_width = distance_bins[1] - distance_bins[0]
+    # Get available runs
+    available_runs = sorted(runs_data.keys())
     
-    # Subplot 1: Original message frequency plot
-    ax1 = plt.subplot(2, 2, (1, 2))  # Top row, spans both columns
+    # Check if run 1 exists
+    if 1 not in available_runs:
+        print(f"Run 1 not found. Available runs: {available_runs}")
+        return
     
-    message_counts = []
-    for i in range(len(distance_bins)-1):
-        count = sum(1 for d in distances if distance_bins[i] <= d < distance_bins[i+1])
-        message_counts.append(count)
+    # Get all communication ranges
+    all_comm_ranges = sorted(set(msg['comm_range'] for run_data in runs_data.values() for msg in run_data))
     
-    bars = ax1.bar(bin_centers, message_counts, 
-                  width=bin_width * 0.8, 
-                  alpha=0.7, 
-                  color='skyblue',
-                  edgecolor='navy',
-                  linewidth=0.5)
+    fig, axes = plt.subplots(1, len(all_comm_ranges), figsize=(6*len(all_comm_ranges), 5))
+    if len(all_comm_ranges) == 1:
+        axes = [axes]
     
-    for bar, count in zip(bars, message_counts):
-        if count > 0:
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height,
-                   f'{count}',
-                   ha='center', va='bottom',
-                   fontsize=9)
-    
-    total_messages = len(distances)
-    mean_distance = np.mean(distances)
-    std_distance = np.std(distances)
-    
-    stats_text = f"Statistics:\n"
-    stats_text += f"Total messages: {total_messages:,}\n"
-    stats_text += f"Mean distance: {mean_distance:.1f} m\n"
-    stats_text += f"Std deviation: {std_distance:.1f} m\n"
-    stats_text += f"Distance range: {min_dist:.1f} - {max_dist:.1f} m"
-    
-    ax1.text(0.98, 0.98, stats_text,
-            transform=ax1.transAxes,
-            verticalalignment='top',
-            horizontalalignment='right',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
-            fontsize=10)
-    
-    ax1.set_xlabel('Distance (m)', fontsize=12)
-    ax1.set_ylabel('Number of Messages', fontsize=12)
-    ax1.set_title('Message Creation Frequency by Distance', fontsize=14)
-    ax1.grid(True, alpha=0.3, axis='y')
-    ax1.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
-    
-    # Subplot 2: Intra-cluster messages
-    ax2 = plt.subplot(2, 2, 3)
-    
-    intra_messages = [msg for msg in messages if msg.distance > 0 and msg.mode == 0]
-    intra_distances = [msg.distance for msg in intra_messages]
-    
-    if intra_distances:
-        intra_counts = []
-        for i in range(len(distance_bins)-1):
-            count = sum(1 for d in intra_distances if distance_bins[i] <= d < distance_bins[i+1])
-            intra_counts.append(count)
+    for idx, comm_range in enumerate(all_comm_ranges):
+        ax = axes[idx]
         
-        ax2.bar(bin_centers, intra_counts,
-               width=bin_width * 0.8,
-               alpha=0.7,
-               color='lightgreen',
-               edgecolor='darkgreen',
-               linewidth=0.5)
+        # Extract run 1 data for this communication range
+        run1_data = [msg for msg in runs_data[1] if msg['comm_range'] == comm_range]
         
-        ax2.set_title('Intra-cluster Messages', fontsize=12, color='darkgreen')
-        ax2.text(0.02, 0.98, f'Total: {len(intra_distances):,}',
-                transform=ax2.transAxes,
-                verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8),
-                fontsize=10)
+        # Extract first n runs (or however many are available)
+        runs_to_aggregate = sorted([r for r in available_runs if r <= n])
+        
+        # Group by max_degree
+        run1_by_degree = {}
+        for msg in run1_data:
+            degree = msg['max_degree']
+            if degree not in run1_by_degree:
+                run1_by_degree[degree] = []
+            run1_by_degree[degree].append(msg['throughput'])
+        
+        # Aggregate across runs
+        aggregated_by_degree = {}
+        for run in runs_to_aggregate:
+            run_data = [msg for msg in runs_data[run] if msg['comm_range'] == comm_range]
+            for msg in run_data:
+                degree = msg['max_degree']
+                if degree not in aggregated_by_degree:
+                    aggregated_by_degree[degree] = []
+                aggregated_by_degree[degree].append(msg['throughput'])
+        
+        # Calculate statistics
+        all_degrees = sorted(set(list(run1_by_degree.keys()) + list(aggregated_by_degree.keys())))
+        
+        run1_means = []
+        run1_stds = []
+        run1_x = []
+        
+        agg_means = []
+        agg_stds = []
+        agg_x = []
+        
+        for degree in all_degrees:
+            if degree in run1_by_degree and run1_by_degree[degree]:
+                run1_means.append(np.mean(run1_by_degree[degree]))
+                run1_stds.append(np.std(run1_by_degree[degree]))
+                run1_x.append(degree)
+            
+            if degree in aggregated_by_degree and aggregated_by_degree[degree]:
+                agg_means.append(np.mean(aggregated_by_degree[degree]))
+                agg_stds.append(np.std(aggregated_by_degree[degree]))
+                agg_x.append(degree)
+        
+        # Plot run 1 data
+        if run1_x:
+            ax.errorbar(run1_x, run1_means, yerr=run1_stds, marker='o', 
+                       label='Run 1', linewidth=2, markersize=8, capsize=5, capthick=2,
+                       color='blue', alpha=0.7)
+        
+        # Plot aggregated data (raw throughput values)
+        if agg_x:
+            ax.errorbar(agg_x, agg_means, yerr=agg_stds, marker='s',
+                       label=f'Aggregate (runs 1-{len(runs_to_aggregate)})', 
+                       linewidth=2, markersize=8, capsize=5, capthick=2,
+                       color='red', alpha=0.7)
+        
+        ax.set_xlabel('Maximum Allowed Node Degree')
+        ax.set_ylabel('Mean Throughput (bytes/second)')
+        ax.set_title(f'Throughput vs Max Degree\nCommunication Range: {comm_range}m')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+    
+    plt.tight_layout()
+    plt.savefig('figures/max_degree_vs_throughput_run_comparison.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+def plot_message_delivery_distribution(all_messages: list[Message], delivered_messages: list[Message], num_bins=20):
+    """Plot message creation and delivery distribution per distance by mode
+    
+    Shows bars for delivered messages and shaded areas on top showing undelivered messages.
+    The total height (bar + shaded area) represents all generated messages.
+    """
+    # Create a figure with 2 subplots vertically
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6))
+    
+    # Subplot 1: Intra-cluster message distribution
+    all_intra_messages = [msg for msg in all_messages if msg.distance > 0 and msg.mode == 0]
+    delivered_intra_messages = [msg for msg in delivered_messages if msg.distance > 0 and msg.mode == 0]
+    all_intra_distances = [msg.distance for msg in all_intra_messages]
+    delivered_intra_distances = [msg.distance for msg in delivered_intra_messages]
+    
+    if all_intra_distances:
+        # Create bins specific to intra-cluster distance range
+        min_intra_dist = min(all_intra_distances)
+        max_intra_dist = max(all_intra_distances)
+        intra_bins = np.linspace(min_intra_dist, max_intra_dist, num_bins + 1)
+        intra_bin_centers = (intra_bins[:-1] + intra_bins[1:]) / 2
+        intra_bin_width = intra_bins[1] - intra_bins[0]
+        
+        all_intra_counts = []
+        delivered_intra_counts = []
+        for i in range(len(intra_bins)-1):
+            all_count = sum(1 for d in all_intra_distances if intra_bins[i] <= d < intra_bins[i+1])
+            delivered_count = sum(1 for d in delivered_intra_distances if intra_bins[i] <= d < intra_bins[i+1])
+            all_intra_counts.append(all_count)
+            delivered_intra_counts.append(delivered_count)
+        
+        bars_intra = ax1.bar(intra_bin_centers, delivered_intra_counts,
+                            width=intra_bin_width * 0.8,
+                            alpha=0.7,
+                            label='Delivered',
+                            color='green',
+                            edgecolor='black',
+                            linewidth=0.5)
+        
+        # Add shaded area above bars showing undelivered messages
+        intra_undelivered_label_added = False
+        for center, all_count, delivered_count in zip(intra_bin_centers, all_intra_counts, delivered_intra_counts):
+            if all_count > delivered_count:
+                left_edge = center - (intra_bin_width * 0.4)
+                height_shade = all_count - delivered_count
+                
+                # Only add label for the first undelivered rectangle
+                label = 'Undelivered' if not intra_undelivered_label_added else ''
+                ax1.add_patch(plt.Rectangle((left_edge, delivered_count), intra_bin_width * 0.8, height_shade,
+                                           facecolor='lightgreen', alpha=0.4, edgecolor='black', linewidth=0.5, label=label))
+                intra_undelivered_label_added = True
+                
+                ax1.text(center, all_count, f'{all_count}',
+                        ha='center', va='bottom', fontsize=8)
+            elif all_count > 0:
+                ax1.text(center, all_count, f'{all_count}',
+                        ha='center', va='bottom', fontsize=8)
+        
+        intra_delivery_rate = (len(delivered_intra_distances) / len(all_intra_distances) * 100) if all_intra_distances else 0
+        ax1.set_title('Intra-cluster', fontsize=12, color='black')
+        ax1.legend(loc='upper right', fontsize=8)
+        # ax1.text(0.02, 0.02, f'Total: {len(all_intra_distances):,}\nDelivered: {len(delivered_intra_distances):,} ({intra_delivery_rate:.1f}%)',
+        #         transform=ax1.transAxes,
+        #         verticalalignment='bottom',
+        #         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+        #         fontsize=9)
+        ax1.set_xlim(min_intra_dist - intra_bin_width/2, max_intra_dist + intra_bin_width/2)
     else:
-        ax2.text(0.5, 0.5, 'No intra-cluster\nmessages found',
+        ax1.text(0.5, 0.5, 'No intra-cluster\nmessages found',
+                transform=ax1.transAxes,
+                ha='center', va='center',
+                fontsize=12)
+        ax1.set_title('Intra-cluster', fontsize=12, color='black')
+    
+    ax1.set_ylabel('Number of Messages', fontsize=10)
+    ax1.grid(True, alpha=0.3, axis='y')
+    # Remove x-axis label from top subplot
+    ax1.tick_params(labelbottom=True)
+    
+    # Subplot 2: Inter-cluster message distribution
+    all_inter_messages = [msg for msg in all_messages if msg.distance > 0 and msg.mode == 1]
+    delivered_inter_messages = [msg for msg in delivered_messages if msg.distance > 0 and msg.mode == 1]
+    all_inter_distances = [msg.distance for msg in all_inter_messages]
+    delivered_inter_distances = [msg.distance for msg in delivered_inter_messages]
+    
+    if all_inter_distances:
+        # Create bins specific to inter-cluster distance range
+        min_inter_dist = min(all_inter_distances)
+        max_inter_dist = max(all_inter_distances)
+        inter_bins = np.linspace(min_inter_dist, max_inter_dist, num_bins + 1)
+        inter_bin_centers = (inter_bins[:-1] + inter_bins[1:]) / 2
+        inter_bin_width = inter_bins[1] - inter_bins[0]
+        
+        all_inter_counts = []
+        delivered_inter_counts = []
+        for i in range(len(inter_bins)-1):
+            all_count = sum(1 for d in all_inter_distances if inter_bins[i] <= d < inter_bins[i+1])
+            delivered_count = sum(1 for d in delivered_inter_distances if inter_bins[i] <= d < inter_bins[i+1])
+            all_inter_counts.append(all_count)
+            delivered_inter_counts.append(delivered_count)
+        
+        bars_inter = ax2.bar(inter_bin_centers, delivered_inter_counts,
+                            width=inter_bin_width * 0.8,
+                            alpha=0.7,
+                            label='Delivered',
+                            color='red',
+                            edgecolor='black',
+                            linewidth=0.5)
+        
+        # Add shaded area above bars showing undelivered messages
+        inter_undelivered_label_added = False
+        for center, all_count, delivered_count in zip(inter_bin_centers, all_inter_counts, delivered_inter_counts):
+            if all_count > delivered_count:
+                left_edge = center - (inter_bin_width * 0.4)
+                height_shade = all_count - delivered_count
+                
+                # Only add label for the first undelivered rectangle
+                label = 'Undelivered' if not inter_undelivered_label_added else ''
+                ax2.add_patch(plt.Rectangle((left_edge, delivered_count), inter_bin_width * 0.8, height_shade,
+                                           facecolor='lightcoral', alpha=0.4, edgecolor='black', linewidth=0.5, label=label))
+                inter_undelivered_label_added = True
+                
+                ax2.text(center, all_count, f'{all_count}',
+                        ha='center', va='bottom', fontsize=8)
+            elif all_count > 0:
+                ax2.text(center, all_count, f'{all_count}',
+                        ha='center', va='bottom', fontsize=8)
+        
+        inter_delivery_rate = (len(delivered_inter_distances) / len(all_inter_distances) * 100) if all_inter_distances else 0
+        ax2.set_title('Inter-cluster', fontsize=12, color='black')
+        ax2.legend(loc='upper right', fontsize=8)
+        # ax2.text(0.02, 0.02, f'Total: {len(all_inter_distances):,}\nDelivered: {len(delivered_inter_distances):,} ({inter_delivery_rate:.1f}%)',
+        #         transform=ax2.transAxes,
+        #         verticalalignment='bottom',
+        #         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+        #         fontsize=9)
+        ax2.set_xlim(min_inter_dist - inter_bin_width/2, max_inter_dist + inter_bin_width/2)
+    else:
+        ax2.text(0.5, 0.5, 'No inter-cluster\nmessages found',
                 transform=ax2.transAxes,
                 ha='center', va='center',
                 fontsize=12)
-        ax2.set_title('Intra-cluster Messages', fontsize=12, color='darkgreen')
+        ax2.set_title('Inter-cluster', fontsize=12, color='black')
     
     ax2.set_xlabel('Distance (m)', fontsize=10)
     ax2.set_ylabel('Number of Messages', fontsize=10)
     ax2.grid(True, alpha=0.3, axis='y')
-    ax2.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
-    
-    # Subplot 3: Inter-cluster messages
-    ax3 = plt.subplot(2, 2, 4)
-    
-    inter_messages = [msg for msg in messages if msg.distance > 0 and msg.mode == 1]
-    inter_distances = [msg.distance for msg in inter_messages]
-    
-    if inter_distances:
-        inter_counts = []
-        for i in range(len(distance_bins)-1):
-            count = sum(1 for d in inter_distances if distance_bins[i] <= d < distance_bins[i+1])
-            inter_counts.append(count)
-        
-        ax3.bar(bin_centers, inter_counts,
-               width=bin_width * 0.8,
-               alpha=0.7,
-               color='lightcoral',
-               edgecolor='darkred',
-               linewidth=0.5)
-        
-        ax3.set_title('Inter-cluster Messages', fontsize=12, color='darkred')
-        ax3.text(0.02, 0.98, f'Total: {len(inter_distances):,}',
-                transform=ax3.transAxes,
-                verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.8),
-                fontsize=10)
-    else:
-        ax3.text(0.5, 0.5, 'No inter-cluster\nmessages found',
-                transform=ax3.transAxes,
-                ha='center', va='center',
-                fontsize=12)
-        ax3.set_title('Inter-cluster Messages', fontsize=12, color='darkred')
-    
-    ax3.set_xlabel('Distance (m)', fontsize=10)
-    ax3.set_ylabel('Number of Messages', fontsize=10)
-    ax3.grid(True, alpha=0.3, axis='y')
-    ax3.set_xlim(min_dist - bin_width/2, max_dist + bin_width/2)
     
     plt.tight_layout()
-    plt.savefig('figures/message-distance-distribution.png', 
-                bbox_inches='tight', dpi=300)
+    fpath = 'figures/message_distance_distribution.png'
+    plt.savefig(fpath, bbox_inches='tight', dpi=300)
+    print(f"Saved message distance distribution plot to {fpath}")
     plt.close()
 
-def plot_delivery_probability_vs_distance_by_range(all_messages: list[Message], delivered_messages: list[Message], 
-                                                  time_threshold: float = 60.0, num_bins: int = 20):
+def plot_centralization_vs_delivery(all_messages: list[Message], delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology], time_threshold: float = 240.0):
     """
-    Plot delivery probability within time_threshold vs distance for each communication range.
+    Plot Gini coefficient and centralization score vs. delivery probability.
     
-    Creates a separate plot for each communication range showing:
-    - X-axis: Distance the message has to travel
-    - Y-axis: Percentage of messages delivered within time_threshold seconds
-    - Vertical asymptote at the communication range limit
+    Each randomized run is treated as an individual data point, showing the natural
+    variation in the relationship between centralization and delivery.
+    
+    Creates a 2x2 grid:
+    - Top row: Gini vs Delivery (intra-cluster, inter-cluster)
+    - Bottom row: S-score vs Delivery (intra-cluster, inter-cluster)
     
     Args:
-        all_messages: All created messages (including undelivered)
-        delivered_messages: Only successfully delivered messages
-        time_threshold: Time threshold in seconds for delivery probability calculation
-        num_bins: Number of distance bins to use for analysis
+        all_messages: All created messages
+        delivered_messages: Successfully delivered messages
+        topologies: Dictionary mapping configuration to topology
+        time_threshold: Time threshold for counting successful deliveries (default 240s)
     """
-    # Get all unique communication ranges
-    comm_ranges = sorted(set(msg.communication_range for msg in all_messages), key=int)
+    TOTAL_NODES = 72
     
-    # Create a subplot for each communication range
-    n_ranges = len(comm_ranges)
-    cols = min(3, n_ranges)  # Max 3 columns
-    rows = (n_ranges + cols - 1) // cols  # Calculate needed rows
+    # Get all available runs with randomized topologies
+    randomized_runs = sorted(set(
+        config.run_number 
+        for config in topologies.keys() 
+        if config.run_randomize_seed == 1
+    ))
     
-    fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
-    if n_ranges == 1:
-        axes = [axes]
-    elif rows == 1:
-        axes = [axes] if n_ranges == 1 else axes
-    else:
-        axes = axes.flatten()
+    if not randomized_runs:
+        raise ValueError("No randomized topologies found.")
     
-    # Hide extra subplots if we have more subplots than ranges
-    for i in range(n_ranges, len(axes)):
-        axes[i].set_visible(False)
+    data_points = []
     
-    for idx, comm_range in enumerate(comm_ranges):
-        ax = axes[idx]
-        
-        # Filter messages for this communication range
-        all_msgs_range = [msg for msg in all_messages if msg.communication_range == comm_range and msg.distance > 0]
-        # Filter all messages that were delivered within the time threshold (not just from delivered_messages)
-        delivered_msgs_range = [msg for msg in all_msgs_range 
-                               if msg.is_delivered == 1 and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
-        
-        if not all_msgs_range:
-            ax.text(0.5, 0.5, f'No data for {int(comm_range)}m range', 
-                   ha='center', va='center', transform=ax.transAxes)
-            ax.set_title(f'Communication Range: {int(comm_range)}m')
-            continue
-        
-        # Get distance range and create bins
-        distances = [msg.distance for msg in all_msgs_range]
-        min_dist = min(distances)
-        # max_dist = min(max(distances), comm_range * 1.2)  # Limit to slightly beyond comm range
-        max_dist = max(distances) * 1.2
-        
-        distance_bins = np.linspace(min_dist, max_dist, num_bins + 1)
-        bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
-        
-        delivery_percentages = []
-        sample_counts = []
-        
-        # Calculate delivery percentage for each distance bin
-        for i in range(len(distance_bins)-1):
-            # Count all messages in this distance bin
-            all_in_bin = [msg for msg in all_msgs_range 
-                         if distance_bins[i] <= msg.distance < distance_bins[i+1]]
+    config_keys = set()
+    for msg in all_messages:
+        config_keys.add((msg.mode, msg.communication_range, msg.max_degree))
+    
+    for mode, comm_range, max_deg in config_keys:
+        for run_num in randomized_runs:
+            config = ConfigurationWithRun(
+                run_number=run_num, 
+                range=comm_range, 
+                max_degree=max_deg, 
+                mode=mode, 
+                run_randomize_seed=1
+            )
+            topology = topologies.get(config)
+            if topology is None:
+                raise("fuck")
             
-            # Count delivered messages in this distance bin (within time threshold)
-            delivered_in_bin = [msg for msg in delivered_msgs_range 
-                               if distance_bins[i] <= msg.distance < distance_bins[i+1]]
+            # Calculate topology metrics
+            degrees_list = []
+            for node_id in range(TOTAL_NODES):
+                node_name = str(node_id)
+                if node_name in topology.connections:
+                    degrees_list.append(len(topology.connections[node_name]))
+                else:
+                    degrees_list.append(0)
             
-            if len(all_in_bin) > 0:
-                percentage = (len(delivered_in_bin) / len(all_in_bin)) * 100
-                delivery_percentages.append(percentage)
-                sample_counts.append(len(all_in_bin))
-            else:
-                delivery_percentages.append(0)
-                sample_counts.append(0)
-        
-        # Plot delivery percentage vs distance
-        valid_indices = [i for i, count in enumerate(sample_counts) if count > 0]
-        if valid_indices:
-            valid_centers = [bin_centers[i] for i in valid_indices]
-            valid_percentages = [delivery_percentages[i] for i in valid_indices]
-            valid_counts = [sample_counts[i] for i in valid_indices]
+            gini = calculate_gini_coefficient(degrees_list)
+            num_links = topology.get_number_of_links()
+            s_score = calculate_centralization_score(degrees_list, num_links)
             
-            # Plot line with markers
-            ax.plot(valid_centers, valid_percentages, 'bo-', linewidth=2, markersize=6, 
-                   label=f'Delivery within {time_threshold}s')
+            # Calculate delivery probability for this specific run
+            msgs_run = [msg for msg in all_messages 
+                       if msg.mode == mode and msg.communication_range == comm_range 
+                       and msg.max_degree == max_deg and msg.run == run_num]
+            delivered_run = [msg for msg in delivered_messages 
+                            if msg.mode == mode and msg.communication_range == comm_range 
+                            and msg.max_degree == max_deg and msg.run == run_num 
+                            and msg.delivery_time <= time_threshold]
             
-            # Add sample size annotations
-            for x, y, count in zip(valid_centers, valid_percentages, valid_counts):
-                ax.annotate(f'n={count}', (x, y), xytext=(0, 10), 
-                           textcoords='offset points', ha='center', fontsize=8,
-                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
-        
-        # Add vertical line at communication range (asymptote)
-        ax.axvline(x=comm_range, color='red', linestyle='--', linewidth=2, alpha=0.8,
-                  label=f'Comm range ({int(comm_range)}m)')
-        
-        # Formatting
-        ax.set_xlabel('Distance (m)')
-        ax.set_ylabel('Delivery Probability (%)')
-        ax.set_title(f'Communication Range: {int(comm_range)}m')
-        ax.set_ylim(0, 105)
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=8)
-        
-        # Set x-axis limit to show communication range
-        ax.set_xlim(min_dist * 0.9, min(max_dist * 1.1, comm_range * 1.3))
+            if len(msgs_run) > 0:
+                delivery_prob = len(delivered_run) / len(msgs_run) * 100
+                
+                data_points.append({
+                    'mode': mode,
+                    'comm_range': comm_range,
+                    'max_degree': max_deg,
+                    'run': run_num,
+                    'delivery_prob': delivery_prob,
+                    'gini': gini,
+                    's_score': s_score
+                })
     
-    # Overall title
-    fig.suptitle(f'Delivery Probability vs Distance by Communication Range\n'
-                f'(Messages delivered within {time_threshold} seconds)', fontsize=16)
+    # Create 2x2 subplot grid
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(f'figures/delivery_probability_vs_distance_by_range_{int(time_threshold)}s.png',
-                bbox_inches='tight', dpi=300)
-    plt.close()
-
-def plot_delivery_probability_vs_distance_aggregated(all_messages: list[Message], delivered_messages: list[Message], 
-                                                   time_threshold: float = 60.0, num_bins: int = 20):
-    """
-    Plot delivery probability within time_threshold vs distance for all communication ranges on one plot.
+    mode_names = {0: 'Intra-cluster', 1: 'Inter-cluster'}
     
-    Creates a single plot showing all communication ranges overlaid:
-    - X-axis: Distance the message has to travel
-    - Y-axis: Percentage of messages delivered within time_threshold seconds
-    - Different colored lines for each communication range
-    - Vertical lines showing each communication range limit
+    # Prepare marker mappings
+    ranges = sorted(set(d['comm_range'] for d in data_points))
     
-    Args:
-        all_messages: All created messages (including undelivered)
-        delivered_messages: Only successfully delivered messages
-        time_threshold: Time threshold in seconds for delivery probability calculation
-        num_bins: Number of distance bins to use for analysis
-    """
-    fig, ax = plt.subplots(figsize=(14, 10))
-    
-    # Get all unique communication ranges
-    comm_ranges = sorted(set(msg.communication_range for msg in all_messages), key=int)
-    colors = plt.cm.viridis(np.linspace(0, 1, len(comm_ranges)))
-    
-    # Find global distance range
-    all_distances = [msg.distance for msg in all_messages if msg.distance > 0]
-    global_min_dist = min(all_distances)
-    global_max_dist = max(all_distances)
-    
-    for idx, comm_range in enumerate(comm_ranges):
-        # Filter messages for this communication range
-        all_msgs_range = [msg for msg in all_messages if msg.communication_range == comm_range and msg.distance > 0]
-        # Filter all messages that were delivered within the time threshold (not just from delivered_messages)
-        delivered_msgs_range = [msg for msg in all_msgs_range 
-                               if msg.is_delivered == 1 and msg.delivery_time <= time_threshold and msg.delivery_time > 0]
-        
-        if not all_msgs_range:
-            continue
-        
-        # Get distance range for this communication range
-        distances = [msg.distance for msg in all_msgs_range]
-        min_dist = min(distances)
-        max_dist = max(distances)
-        
-        # Create bins for this range (use range-specific binning for better resolution)
-        distance_bins = np.linspace(min_dist, max_dist, num_bins + 1)
-        bin_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
-        
-        delivery_percentages = []
-        sample_counts = []
-        
-        # Calculate delivery percentage for each distance bin
-        for i in range(len(distance_bins)-1):
-            # Count all messages in this distance bin
-            all_in_bin = [msg for msg in all_msgs_range 
-                         if distance_bins[i] <= msg.distance < distance_bins[i+1]]
-            
-            # Count delivered messages in this distance bin (within time threshold)
-            delivered_in_bin = [msg for msg in delivered_msgs_range 
-                               if distance_bins[i] <= msg.distance < distance_bins[i+1]]
-            
-            if len(all_in_bin) > 0:
-                percentage = (len(delivered_in_bin) / len(all_in_bin)) * 100
-                delivery_percentages.append(percentage)
-                sample_counts.append(len(all_in_bin))
-            else:
-                delivery_percentages.append(0)
-                sample_counts.append(0)
-        
-        # Plot delivery percentage vs distance for this communication range
-        valid_indices = [i for i, count in enumerate(sample_counts) if count > 0]
-        if valid_indices:
-            valid_centers = [bin_centers[i] for i in valid_indices]
-            valid_percentages = [delivery_percentages[i] for i in valid_indices]
-            
-            # Plot line with markers
-            ax.plot(valid_centers, valid_percentages, 'o-', 
-                   color=colors[idx], linewidth=2.5, markersize=5,
-                   label=f'{int(comm_range)}m range')
-        
-        # Add vertical line at communication range (asymptote)
-        ax.axvline(x=comm_range, color=colors[idx], linestyle='--', 
-                  linewidth=1.5, alpha=0.7)
-    
-    # Formatting
-    ax.set_xlabel('Distance (m)', fontsize=12)
-    ax.set_ylabel('Delivery Probability (%)', fontsize=12)
-    ax.set_title(f'Delivery Probability vs Distance by Communication Range\n'
-                f'(Messages delivered within {time_threshold} seconds)', fontsize=14)
-    ax.set_ylim(0, 105)
-    ax.grid(True, alpha=0.3)
-    
-    # Legend with communication range indicators
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(handles, labels, loc='upper right', fontsize=10, 
-             title='Communication Ranges\n(dashed lines show limits)')
-    
-    # Set reasonable x-axis limits
-    ax.set_xlim(global_min_dist * 0.95, min(global_max_dist * 1.05, max(comm_ranges) * 1.2))
-    
-    plt.tight_layout()
-    plt.savefig(f'figures/delivery_probability_vs_distance_aggregated_{int(time_threshold)}s.png',
-                bbox_inches='tight', dpi=300)
-    plt.close()
-
-def plot_deliverability_vs_communication_range(all_messages: list[Message], delivered_messages: list[Message]):
-    """Plot deliverability percentage vs communication range"""
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    all_ranges = sorted(set(msg.communication_range for msg in all_messages), key=int)
-    delivered_ranges = sorted(set(msg.communication_range for msg in delivered_messages), key=int)
-    
-    total_counts = {}
-    delivered_counts = {}
-    
-    for comm_range in all_ranges:
-        total_counts[comm_range] = len([msg for msg in all_messages if msg.communication_range == comm_range])
-        delivered_counts[comm_range] = len([msg for msg in delivered_messages if msg.communication_range == comm_range])
-    
-    ranges = []
-    percentages = []
-    raw_counts = []
-    
-    for comm_range in all_ranges:
-        total = total_counts.get(comm_range, 0)
-        delivered = delivered_counts.get(comm_range, 0)
-        
-        if total > 0:
-            percentage = (delivered / total) * 100
-            ranges.append(comm_range)
-            percentages.append(percentage)
-            raw_counts.append((delivered, total))
-    
+    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
     colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
-    bars = ax.bar(range(len(ranges)), percentages, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
     
-    # Add percentage labels on top of bars
-    for i, (bar, percentage, (delivered, total)) in enumerate(zip(bars, percentages, raw_counts)):
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height + 0.5,
-                f'{percentage:.1f}%',
-                ha='center', va='bottom',
-                fontsize=10)
+    # Plot Gini coefficient (top row)
+    for mode_idx, mode in enumerate([0, 1]):
+        ax = axes[0, mode_idx]
         
-        # Add count labels inside bars
-        ax.text(bar.get_x() + bar.get_width()/2., height/2,
-                f'{delivered:,}',
-                ha='center', va='center',
-                fontsize=8,
-                color='black')
+        for range_idx, comm_range in enumerate(ranges):
+            # Get all points for this communication range and mode
+            points = [d for d in data_points 
+                     if d['mode'] == mode and d['comm_range'] == comm_range]
+            
+            if not points:
+                continue
+            
+            # Group by delivery_prob and calculate mean/std for each group
+            # This creates error bars showing variance across runs with similar delivery rates
+            delivery_groups = {}
+            for point in points:
+                dp = round(point['delivery_prob'], 1)  # Round to 0.1% precision for grouping
+                if dp not in delivery_groups:
+                    delivery_groups[dp] = {'gini': [], 'delivery_probs': []}
+                delivery_groups[dp]['gini'].append(point['gini'])
+                delivery_groups[dp]['delivery_probs'].append(point['delivery_prob'])
+            
+            # Calculate statistics for each group
+            x_vals = []
+            y_vals = []
+            y_stds = []
+            
+            for dp in sorted(delivery_groups.keys()):
+                x_vals.append(np.mean(delivery_groups[dp]['delivery_probs']))
+                y_vals.append(np.mean(delivery_groups[dp]['gini']))
+                y_stds.append(np.std(delivery_groups[dp]['gini']))
+            
+            if x_vals:
+                # Plot with error bars
+                ax.errorbar(x_vals, y_vals, yerr=y_stds,
+                           marker=markers[range_idx % len(markers)],
+                           markersize=8,
+                           linewidth=2,
+                           capsize=5,
+                           capthick=2,
+                           color=colors[range_idx],
+                           label=f'{int(comm_range)}m range')
+        
+        ax.set_xlabel('Delivery Probability (%)', fontsize=11)
+        ax.set_ylabel('Gini Coefficient', fontsize=11)
+        ax.set_title(f'Gini vs Delivery', fontsize=12, fontweight='bold')
+        ax.set_ylim(0, 1)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best', fontsize=9)
     
-    ax.set_xlabel('Communication Range (m)', fontsize=12)
-    ax.set_ylabel('Deliverability (%)', fontsize=12)
-    ax.set_title('Message Deliverability vs Communication Range', fontsize=14)
-    ax.set_xticks(range(len(ranges)))
-    ax.set_xticklabels([f'{int(r)}m' for r in ranges])
-    ax.set_ylim(0, 105)  # Set y-axis from 0 to 105%
-    ax.grid(True, alpha=0.3, axis='y')
+    # Plot S-score (bottom row)
+    for mode_idx, mode in enumerate([0, 1]):
+        ax = axes[1, mode_idx]
+        
+        for range_idx, comm_range in enumerate(ranges):
+            # Get all points for this communication range and mode
+            points = [d for d in data_points 
+                     if d['mode'] == mode and d['comm_range'] == comm_range]
+            
+            if not points:
+                continue
+            
+            # Group by delivery_prob and calculate mean/std for each group
+            delivery_groups = {}
+            for point in points:
+                dp = round(point['delivery_prob'], 1)  # Round to 0.1% precision for grouping
+                if dp not in delivery_groups:
+                    delivery_groups[dp] = {'s_score': [], 'delivery_probs': []}
+                delivery_groups[dp]['s_score'].append(point['s_score'])
+                delivery_groups[dp]['delivery_probs'].append(point['delivery_prob'])
+            
+            # Calculate statistics for each group
+            x_vals = []
+            y_vals = []
+            y_stds = []
+            
+            for dp in sorted(delivery_groups.keys()):
+                x_vals.append(np.mean(delivery_groups[dp]['delivery_probs']))
+                y_vals.append(np.mean(delivery_groups[dp]['s_score']))
+                y_stds.append(np.std(delivery_groups[dp]['s_score']))
+            
+            if x_vals:
+                # Plot with error bars
+                ax.errorbar(x_vals, y_vals, yerr=y_stds,
+                           marker=markers[range_idx % len(markers)],
+                           markersize=8,
+                           linewidth=2,
+                           capsize=5,
+                           capthick=2,
+                           color=colors[range_idx],
+                           label=f'{int(comm_range)}m range')
+        
+        ax.set_xlabel('Delivery Probability (%)', fontsize=11)
+        ax.set_ylabel('Centralization Score S', fontsize=11)
+        ax.set_title(f'S-score vs Delivery', fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='best', fontsize=9)
+    
+    # Create title with appropriate threshold label
+    threshold_label = "All Deliveries" if time_threshold == float('inf') else f"Time Threshold: {int(time_threshold)}s"
+    plt.suptitle(f'Centralization Metrics vs. Delivery Probability\n({threshold_label})',
+                 fontsize=14, fontweight='bold', y=0.995)
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    
+    # Create filename with appropriate threshold label
+    threshold_suffix = "all" if time_threshold == float('inf') else f"t{int(time_threshold)}"
+    plt.savefig(f'figures/centralization_vs_delivery_subplots_{threshold_suffix}.png', 
+                dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    threshold_display = "all deliveries" if time_threshold == float('inf') else f"threshold={int(time_threshold)}s"
+    print(f"Subplot centralization vs delivery plot saved ({threshold_display})")
+
+def plot_latency_vs_max_degree(delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
+    """
+    Plot mean latency vs max node degree for different distance ranges.
+    
+    Creates separate plots for:
+    - Low distances (≤40m) - intra and inter cluster
+    - High distances (50-100m) - intra and inter cluster  
+    - All distances - intra and inter cluster
+    """
+    TOTAL_NODES = 72
+    
+    # Get all available runs with randomized topologies
+    randomized_runs = sorted(set(
+        config.run_number 
+        for config in topologies.keys() 
+        if config.run_randomize_seed == 1
+    ))
+    
+    if not randomized_runs:
+        print("Warning: No randomized topologies found.")
+        randomized_runs = [1]
+    
+    # Collect data points: latency per run/config
+    data_points = []
+    
+    # Pre-group messages by (mode, comm_range, max_deg, run) for O(n) instead of O(n*m)
+    from collections import defaultdict
+    grouped_messages = defaultdict(list)
+    for msg in delivered_messages:
+        # if msg.delivery_time > 0:
+            key = (msg.mode, msg.communication_range, msg.max_degree, msg.run)
+            grouped_messages[key].append(msg.delivery_time)
+    
+    # Extract data points from pre-grouped messages
+    for (mode, comm_range, max_deg, run_num), latencies in grouped_messages.items():
+        if run_num in randomized_runs:
+            mean_latency = np.mean(latencies)
+            
+            data_points.append({
+                'mode': mode,
+                'comm_range': comm_range,
+                'max_degree': max_deg,
+                'run': run_num,
+                'mean_latency': mean_latency
+            })
+    
+    ranges = sorted(set(d['comm_range'] for d in data_points))
+    max_degrees = sorted(set(d['max_degree'] for d in data_points))
+    
+    # Split by distance
+    low_ranges = [r for r in ranges if r <= 40]
+    high_ranges = [r for r in ranges if r >= 50]
+    
+    mode_names = {0: 'Intra-cluster', 1: 'Inter-cluster'}
+    markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x']
+    
+    def plot_for_mode_and_ranges(mode, distance_ranges, range_label, filename_suffix):
+        """Helper to plot latency vs max_degree for a specific mode and distance range"""
+        if not distance_ranges:
+            return
+        
+        colors_local = plt.cm.viridis(np.linspace(0, 1, len(distance_ranges)))
+        
+        fig, ax = plt.subplots(figsize=(10, 7))
+        
+        for range_idx, comm_range in enumerate(distance_ranges):
+            # Filter points for this mode and range
+            points = [d for d in data_points 
+                     if d['mode'] == mode and d['comm_range'] == comm_range]
+            
+            if not points:
+                continue
+            
+            # Group by max_degree
+            degree_groups = {}
+            for point in points:
+                max_deg = point['max_degree']
+                if max_deg not in degree_groups:
+                    degree_groups[max_deg] = []
+                degree_groups[max_deg].append(point['mean_latency'])
+            
+            # Calculate statistics
+            x_vals = []
+            y_vals = []
+            y_stds = []
+            
+            for max_deg in sorted(degree_groups.keys()):
+                x_vals.append(max_deg)
+                y_vals.append(np.mean(degree_groups[max_deg]))
+                y_stds.append(np.std(degree_groups[max_deg]))
+            
+            if x_vals:
+                ax.errorbar(x_vals, y_vals, yerr=y_stds,
+                           marker=markers[range_idx % len(markers)], 
+                           markersize=4,
+                           linewidth=1,
+                           capsize=3,
+                           capthick=1,
+                           label=f'{int(comm_range)}m range',
+                           color=colors_local[range_idx])
+        
+        ax.set_xlabel('Maximum Allowed Node Degree', fontsize=12)
+        ax.set_ylabel('Mean Latency (seconds)', fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.set_yscale('log')
+        
+        # Place legend below the plot with 4 columns
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=4, fontsize=10, frameon=True)
+        
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.2)  # Make room for legend below
+        fpath = f'figures/latency_vs_max_degree_{filename_suffix}.png'
+        plt.savefig(fpath, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Saved latency vs max degree plot to {fpath}")
+    
+    # Generate plots for each mode and distance range combination
+    # for mode in [0, 1]:
+    for mode in [1]:
+        mode_suffix = 'intra' if mode == 0 else 'inter'
+        
+        # # Low distances
+        # if low_ranges:
+        #     plot_for_mode_and_ranges(mode, low_ranges, "Low Distances: ≤40m", 
+        #                             f"{mode_suffix}_low_dist")
+        
+        # High distances
+        # if high_ranges:
+        #     plot_for_mode_and_ranges(mode, high_ranges, "High Distances: 50-100m", 
+        #                             f"{mode_suffix}_high_dist")
+        
+        # All distances
+        plot_for_mode_and_ranges(mode, ranges, "All Distances", f"{mode_suffix}_all_dist")
+
+def plot_latency_vs_centralization(delivered_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
+    """
+    Plot mean latency vs Gini coefficient and S-score for different distance ranges.
+    
+    Arguments:
+        - delivered_messages: list of all delivered messages (from randomized topologies)
+        - topologies: randomized topologies by their configurations
+    """
+    ranges = sorted(set(config.range for config in topologies.keys()))
+    if not ranges:
+        raise ValueError("No ranges")
+
+    # Pre-group messages by config
+    grouped_messages: dict[ConfigurationWithRun, list[float]] = defaultdict(list)
+    for msg in delivered_messages:
+        key = ConfigurationWithRun(run_number = msg.run, range=msg.communication_range, max_degree=msg.max_degree, mode=msg.mode, run_randomize_seed=0)
+        grouped_messages[key].append(msg.delivery_time)
+    data_points: list[MetricsForTopology] = []
+    
+    # latencies is an array containing the delivery times of all messages in the configuration
+    for config, latencies in grouped_messages.items():
+        topology = topologies.get(config)
+        if not topology:
+            maybes = [t.__str__() for t in topologies if t.range == config.range and t.max_degree == config.max_degree and t.mode == config.mode]
+            print(f"maybes: {maybes}")
+            raise ValueError(f"Configuraiton without topology: {config}")
+        metricsForTopology = MetricsForTopology(config, topology, latencies)
+        data_points.append(metricsForTopology)
+
+    
+    # Split by distance
+    low_ranges = [r for r in ranges if r <= 40]
+    high_ranges = [r for r in ranges if r >= 50]
+    
+    def plot_for_range_group(data: list[MetricsForTopology], mode: int, ranges_to_plot: list[int], filename_suffix: str):
+        """Helper to plot latency vs centralization metrics for a group of communication ranges
+        
+        Plots trend lines (linear regression) per communication range, aggregating all configurations.
+        """
+        
+        # Create 2 subplots: Gini and S-score
+        fig, axes = plt.subplots(2, 1, figsize=(8, 10))
+        
+        # Define markers for different ranges
+        markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
+        
+        colors = plt.cm.Paired(np.linspace(0.05, 0.95, len(ranges_to_plot)))
+        # ax1: Latency vs Gini, ax2: latency vs s-score (one trend line per range, aggregated across all max degrees)
+        ax1, ax2 = axes[0], axes[1]
+        for range_idx, comm_range in enumerate(ranges_to_plot):
+            # Get all points for this mode and communication range (all max degrees)
+            points = [d for d in data if d.config.mode == mode and d.config.range == comm_range and d.config.max_degree >= 2] # TODO: only run for maxdeg >= 2
+            if len(points) < 2:
+                continue
+            x_vals_gini = np.array([p.gini for p in points])
+            x_vals_s_score = np.array([p.s_score for p in points])
+            y_vals = np.array([p.mean_latency for p in points])
+            
+            # Compute linear regression in log space (since y-axis is log scale)
+            log_y_vals = np.log10(y_vals)
+            
+            # Fit linear regression line using least squares estimate
+            coeffs_gini = np.polyfit(x_vals_gini, log_y_vals, 1)
+            poly_gini = np.poly1d(coeffs_gini)
+            coeffs_s_score = np.polyfit(x_vals_s_score, log_y_vals, 1)
+            poly_s_score = np.poly1d(coeffs_s_score)
+            
+            # Create smooth x values for trend line
+            x_trend_gini = np.linspace(x_vals_gini.min(), x_vals_gini.max(), 100)
+            y_trend_gini = 10 ** poly_gini(x_trend_gini)  # Convert back from log space
+            
+            x_trend_s_score = np.linspace(x_vals_s_score.min(), x_vals_s_score.max(), 100)
+            y_trend_s_score = 10 ** poly_s_score(x_trend_s_score)  # Convert back from log space
+            
+            # Plot scatter points for the value distribution
+            ax1.scatter(x_vals_gini, y_vals, 
+                      marker=markers[range_idx % len(markers)],
+                      color=colors[range_idx], 
+                      alpha=0.3, 
+                      s=20)
+            ax2.scatter(x_vals_s_score, y_vals, 
+                      marker=markers[range_idx % len(markers)],
+                      color=colors[range_idx], 
+                      alpha=0.3, 
+                      s=20)
+            
+            # Plot trend line with markers
+            ax1.plot(x_trend_gini, y_trend_gini,
+                   alpha=0.8,
+                #    marker=markers[range_idx % len(markers)],
+                   color=colors[range_idx],
+                   label=f'{int(comm_range)}m')
+            ax2.plot(x_trend_s_score, y_trend_s_score,
+                   alpha=0.8,
+                #    marker=markers[range_idx % len(markers)],t
+                   color=colors[range_idx],
+                   label=f'{int(comm_range)}m')
+        
+        ax1.set_xlabel('Gini Coefficient', fontsize=12)
+        ax2.set_xlabel('Centralization Score S', fontsize=12)
+        ax1.set_ylabel('Mean Latency (seconds)', fontsize=12)
+        ax1.grid(True, alpha=0.3)
+        ax1.set_yscale('log')
+        ax1.legend(loc='best', fontsize=10)
+        
+        plt.tight_layout()
+        fpath=f'figures/latency_vs_centralization_{filename_suffix}.png'
+        print(f"Saving latency vs. centralization plot to {fpath}")
+        plt.savefig(fpath, dpi=300, bbox_inches='tight')
+        plt.close()
+    
+    # Generate plots for each mode, grouped by distance ranges
+    for mode in [0, 1]:
+        mode_suffix = 'intra' if mode == 0 else 'inter'
+        
+        if low_ranges:
+            plot_for_range_group(data_points, mode, low_ranges, f"{mode_suffix}_low_dist")
+        if high_ranges:
+            plot_for_range_group(data_points, mode, high_ranges, f"{mode_suffix}_high_dist")
+        plot_for_range_group(data_points, mode, ranges, f"{mode_suffix}_all_dist")        
+
+def plot_topology_and_distance_matrices(all_messages: list[Message], topologies: dict[ConfigurationWithRun, Topology]):
+    """
+    Generate topology and distance matrix plots for each range and max_degree.
+    
+    Uses non-randomized topologies (run_randomize_seed=0, run=1) for consistent visualization.
+    
+    Creates combined plots with 1 row × 3 columns:
+    - Left: Distance matrix (same for both modes)
+    - Middle: Topology matrix for intra-cluster mode
+    - Right: Topology matrix for inter-cluster mode
+    
+    Args:
+        all_messages: All created messages
+        topologies: Dictionary mapping configuration (range, mode, max_degree, run) to topology
+    """
+    
+    # Create directory for plots
+    plots_dir = "figures/topology_distance_matrices"
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Get unique ranges and max_degrees
+    ranges = sorted(set(msg.communication_range for msg in all_messages))
+    max_degrees = sorted(set(msg.max_degree for msg in all_messages))
+    modes = [0, 1]  # intra-cluster, inter-cluster
+    messages_by_degree = { (comm_range, mode, max_deg): [] for comm_range in ranges for max_deg in max_degrees for mode in modes }
+    for message in all_messages:
+        key = (message.communication_range, message.mode, message.max_degree)
+        messages_by_degree[key].append(message)
+    
+    max_range = float(max(ranges))   
+    for comm_range in [max_range]:
+        for max_deg in max_degrees:
+            print(f"Processing topology/distance matrices for range {comm_range}m, max_degree={max_deg}...")
+            
+            # Create figure with 1 row × 3 columns
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            
+            # Calculate distance matrix (same for both modes, use mode 0 messages)
+            all_messages_mode0 = messages_by_degree[(comm_range, 0, max_deg)]
+            if all_messages_mode0:
+                distance_matrix = get_host_distance_matrix(all_messages_mode0)
+                
+                # Plot distance matrix (left)
+                ax_dist = axes[0]
+                im_dist = ax_dist.imshow(distance_matrix, cmap='viridis', interpolation='nearest', origin='lower')
+                ax_dist.set_xlabel('Host Index', fontsize=16)
+                ax_dist.set_ylabel('Host Index', fontsize=16)
+                cbar_dist = plt.colorbar(im_dist, ax=ax_dist)
+                cbar_dist.set_label('Distance (m)', fontsize=16)
+            
+            # Plot topology matrices for both modes
+            for mode_idx, mode in enumerate(modes):
+                mode_name = "Intra-cluster" if mode == 0 else "Inter-cluster"
+                ax_topo = axes[mode_idx + 1]  # Index 1 for intra, 2 for inter
+                
+                # Get non-randomized topology (run_randomize_seed=0, run=1)
+                topology_key = ConfigurationWithRun(range=comm_range, mode=mode, max_degree=max_deg, run_number=1, run_randomize_seed=0)
+                if topology_key in topologies:
+                    topology: Topology = topologies[topology_key]
+                    topology_matrix = get_topology_matrix_from_connectivity(topology)
+                else:
+                    configurations: list[ConfigurationWithRun] = topologies.keys()
+                    other_topologies = [config.__str__() for config in configurations if config.range == comm_range and config.mode == mode]
+                    print(f"    Warning: No topology found for range {comm_range}, mode {mode}, max_degree {max_deg}, run 1, randomize_seed 0")
+                    print(f"    Others: {other_topologies}")
+                    raise ValueError(f"No topology found for range {comm_range}, mode {mode}, max_degree {max_deg}, run 1, randomize_seed 0")
+                
+                # Plot topology matrix
+                im_topo = ax_topo.imshow(topology_matrix, cmap='binary', interpolation='nearest', 
+                                   vmin=0, vmax=1, origin='lower')
+                ax_topo.set_title(f'{mode_name} topology', fontsize=14)
+                ax_topo.set_ylabel('Host Index', fontsize=12)
+                ax_topo.set_xlabel('Host Index', fontsize=12)
+
+            plt.tight_layout()
+            
+            plot_filename = f"{plots_dir}/range{int(comm_range)}_maxdeg{max_deg}_topology_distance.png"
+            plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"  Saved: {plot_filename}")
+
+def plot_delivery_success_matrices(all_messages: list[Message], delivered_messages: list[Message], *time_thresholds: float):
+    """
+    Generate delivery success probability matrix plots for each range and max_degree.
+    
+    Creates plots with both modes (intra-cluster and inter-cluster) as subplots for each time threshold.
+    Layout: 2 rows × N columns (where N is the number of time thresholds)
+    - Top row: intra-cluster delivery probability for each threshold
+    - Bottom row: inter-cluster delivery probability for each threshold
+    
+    Args:
+        all_messages: All created messages
+        delivered_messages: Successfully delivered messages
+        *time_thresholds: Variable number of time thresholds for delivery success calculation
+    
+    Example:
+        plot_delivery_success_matrices(all_msgs, delivered_msgs, 10.0, 60.0, 240.0)
+    """
+    
+    if not time_thresholds:
+        print("Error: At least one time threshold must be provided")
+        return
+    
+    # Create directory for plots
+    plots_dir = "figures/delivery_success_matrices"
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Get unique ranges and max_degrees
+    ranges = sorted(set(msg.communication_range for msg in all_messages))
+    max_degrees = sorted(set(msg.max_degree for msg in all_messages))
+    modes = [0, 1]  # intra-cluster, inter-cluster
+    
+    messages_by_degree = { (comm_range, mode, max_deg): [] for comm_range in ranges for max_deg in max_degrees for mode in modes }
+    delivered_by_degree = { (comm_range, mode, max_deg): [] for comm_range in ranges for max_deg in max_degrees for mode in modes }
+    
+    for message in all_messages:
+        key = (message.communication_range, message.mode, message.max_degree)
+        messages_by_degree[key].append(message)
+    for message in delivered_messages:
+        key = (message.communication_range, message.mode, message.max_degree)
+        delivered_by_degree[key].append(message)
+    
+    max_range = float(max(ranges))   
+    for comm_range in [max_range]:
+        for max_deg in max_degrees:
+            # Create filename suffix with all thresholds
+            threshold_str = "_".join([f"{int(t)}s" for t in time_thresholds])
+            print(f"Processing delivery success matrices for range {comm_range}m, max_degree={max_deg}, thresholds={threshold_str}...")
+            
+            # Get runs for statistics (same across all modes and thresholds)
+            sample_key = (comm_range, 0, max_deg)
+            all_messages_sample = messages_by_degree[sample_key]
+            runs = sorted(set(msg.run for msg in all_messages_sample)) if all_messages_sample else []
+            
+            # Create separate plots for each mode
+            for mode in modes:
+                mode_name = "intra" if mode == 0 else "inter"
+                mode_name_title = "Intra-cluster" if mode == 0 else "Inter-cluster"
+                
+                # Create figure with N rows × 1 column (vertical layout)
+                n_thresholds = len(time_thresholds)
+                fig_height = 3.5 * n_thresholds  # 3.5 inches per threshold row (matches centralization plots)
+                
+                # Use gridspec to have more control over layout
+                fig = plt.figure(figsize=(5, fig_height), constrained_layout=True)
+                gs = fig.add_gridspec(n_thresholds, 2, width_ratios=[20, 1], wspace=0.15)
+                
+                # Create axes for matrices (left column)
+                axes = [fig.add_subplot(gs[i, 0]) for i in range(n_thresholds)]
+                
+                # Store the image for later colorbar creation
+                im_for_colorbar = None
+                
+                # Plot each threshold as a row
+                for threshold_idx, time_threshold in enumerate(time_thresholds):
+                    ax = axes[threshold_idx]
+                    
+                    # Filter messages for this range, mode, and max_degree (across all runs)
+                    all_messages_filtered = messages_by_degree[(comm_range, mode, max_deg)]
+                    delivered_messages_filtered = delivered_by_degree[(comm_range, mode, max_deg)]
+                    
+                    if not all_messages_filtered:
+                        print(f"  No messages found for {mode_name} mode")
+                        # Mark axes as empty
+                        ax.text(0.5, 0.5, f'No data for {mode_name}-cluster', 
+                               ha='center', va='center', transform=ax.transAxes, fontsize=16)
+                        ax.set_xticks([])
+                        ax.set_yticks([])
+                        continue
+                    
+                    # Calculate delivery success matrix for this threshold
+                    success_matrix = get_delivery_success_matrix(all_messages_filtered, delivered_messages_filtered, time_threshold)
+                    
+                    # Calculate statistics
+                    n_messages = len(all_messages_filtered)
+                    delivered_at_threshold = [msg for msg in delivered_messages_filtered if msg.delivery_time <= time_threshold]
+                    n_delivered = len(delivered_at_threshold)
+                    delivery_rate = (n_delivered / n_messages * 100) if n_messages > 0 else 0
+                    
+                    # Plot delivery success matrix
+                    im = ax.imshow(success_matrix, cmap='RdYlGn', interpolation='nearest', 
+                                  vmin=0, vmax=1, origin='lower', aspect='equal')
+                    
+                    # Store image for colorbar (use the last one)
+                    im_for_colorbar = im
+                    
+                    # Set title with threshold
+                    ax.set_title(f'Threshold: {int(time_threshold)}s, delivery rate: {delivery_rate:.1f}%', 
+                               fontsize=12, pad=10)
+                    
+                    # Y-label on all rows
+                    ax.set_ylabel('Host Index', fontsize=12)
+                    
+                    # X-label only on bottom row
+                    if threshold_idx == n_thresholds - 1:
+                        ax.set_xlabel('Host Index', fontsize=12)
+                    
+                    # Set equal aspect ratio to ensure square matrices
+                    ax.set_aspect('equal', adjustable='box')
+                    
+                    # Tick label size
+                    ax.tick_params(axis='both', which='major', labelsize=12)
+                    
+                    print(f"    {mode_name.title()}-cluster, threshold {int(time_threshold)}s: {n_delivered:,}/{n_messages:,} ({delivery_rate:.1f}%)")
+                
+                # Add a single colorbar in the right column, spanning all rows
+                if im_for_colorbar is not None:
+                    # Create colorbar axis on the right side
+                    cbar_ax = fig.add_subplot(gs[:, 1])
+                    cbar = fig.colorbar(im_for_colorbar, cax=cbar_ax, label='Delivery Probability')
+                    cbar.ax.tick_params(labelsize=12)
+                    cbar.set_label('Delivery Probability', fontsize=12)
+                
+                plot_filename = f"{plots_dir}/range{int(comm_range)}_maxdeg{max_deg}_{mode_name}_thresholds_{threshold_str}.png"
+                plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+                plt.close()
+                
+                print(f"  Saved: {plot_filename}")
+
+def plot_delivery_success_matrices_comparison(all_messages: list[Message], delivered_messages: list[Message], mode: int, *time_thresholds: float):
+    """
+    Generate delivery success probability matrix plots comparing multiple time thresholds for a single mode.
+    
+    Creates plots with 1 row × N columns (where N is the number of thresholds):
+    - Each column shows the delivery probability at one time threshold
+    
+    Args:
+        all_messages: All created messages
+        delivered_messages: Successfully delivered messages
+        mode: Communication mode (0 for intra-cluster, 1 for inter-cluster)
+        *time_thresholds: Variable number of time thresholds for delivery success calculation
+    
+    Example:
+        plot_delivery_success_matrices_comparison(all_msgs, delivered_msgs, 0, 10.0, 60.0, 240.0)
+    """
+    
+    if not time_thresholds:
+        print("Error: At least one time threshold must be provided")
+        return
+    
+    # Create directory for plots
+    plots_dir = "figures/delivery_success_matrices"
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Get unique ranges and max_degrees
+    ranges = sorted(set(msg.communication_range for msg in all_messages))
+    max_degrees = sorted(set(msg.max_degree for msg in all_messages))
+    
+    messages_by_degree = {}
+    delivered_by_degree = {}
+    
+    for comm_range in ranges:
+        for max_deg in max_degrees:
+            key = (comm_range, mode, max_deg)
+            messages_by_degree[key] = []
+            delivered_by_degree[key] = []
+    
+    for message in all_messages:
+        if message.mode == mode:
+            key = (message.communication_range, message.mode, message.max_degree)
+            messages_by_degree[key].append(message)
+    
+    for message in delivered_messages:
+        if message.mode == mode:
+            key = (message.communication_range, message.mode, message.max_degree)
+            delivered_by_degree[key].append(message)
+    
+    mode_name = "intra" if mode == 0 else "inter"
+    mode_name_title = "Intra-cluster" if mode == 0 else "Inter-cluster"
+    
+    max_range = float(max(ranges))   
+    for comm_range in [max_range]:
+        for max_deg in max_degrees:
+            print(f"Processing delivery success comparison for range {comm_range}m, max_degree={max_deg}, mode={mode_name}...")
+            
+            # Create figure with 1 row × N columns (N = number of thresholds)
+            n_thresholds = len(time_thresholds)
+            fig_width = 8 * n_thresholds  # 8 inches per subplot
+            fig, axes = plt.subplots(1, n_thresholds, figsize=(fig_width, 7))
+            
+            # Make axes iterable even if there's only one threshold
+            if n_thresholds == 1:
+                axes = [axes]
+            
+            # Filter messages for this range, mode, and max_degree
+            all_messages_filtered = messages_by_degree[(comm_range, mode, max_deg)]
+            delivered_messages_filtered = delivered_by_degree[(comm_range, mode, max_deg)]
+            
+            if not all_messages_filtered:
+                print(f"  No messages found for {mode_name} mode")
+                for ax in axes:
+                    ax.text(0.5, 0.5, f'No data for {mode_name_title}', 
+                           ha='center', va='center', transform=ax.transAxes, fontsize=14)
+                    ax.set_xticks([])
+                    ax.set_yticks([])
+                continue
+            
+            # Get runs for statistics
+            runs = sorted(set(msg.run for msg in all_messages_filtered))
+            
+            # Plot each time threshold
+            for threshold_idx, time_threshold in enumerate(time_thresholds):
+                ax = axes[threshold_idx]
+                
+                # Calculate delivery success matrix for this threshold
+                success_matrix = get_delivery_success_matrix(all_messages_filtered, delivered_messages_filtered, time_threshold)
+                
+                # Calculate statistics
+                n_messages = len(all_messages_filtered)
+                delivered_at_threshold = [msg for msg in delivered_messages_filtered if msg.delivery_time <= time_threshold]
+                n_delivered = len(delivered_at_threshold)
+                delivery_rate = (n_delivered / n_messages * 100) if n_messages > 0 else 0
+                
+                # Plot delivery success matrix
+                im = ax.imshow(success_matrix, cmap='RdYlGn', interpolation='nearest', 
+                              vmin=0, vmax=1, origin='lower')
+                ax.set_title(f'Delivery Probability\nTime Threshold: {int(time_threshold)}s', 
+                           fontsize=12, fontweight='bold')
+                ax.set_xlabel('Host Index', fontsize=10)
+                ax.set_ylabel('Host Index', fontsize=10)
+                cbar = plt.colorbar(im, ax=ax, label='Delivery Probability')
+                
+                # Add statistics text
+                stats_text = f"Messages: {n_messages:,}\nDelivered: {n_delivered:,}\nRate: {delivery_rate:.1f}%\nRuns: {len(runs)}"
+                ax.text(0.02, 0.98, stats_text,
+                       transform=ax.transAxes,
+                       verticalalignment='top',
+                       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                       fontsize=9)
+                
+                print(f"    Threshold {int(time_threshold)}s: {n_delivered:,}/{n_messages:,} messages delivered ({delivery_rate:.1f}%)")
+            
+            # Add overall title
+            fig.suptitle(f'Delivery Success Probability - {mode_name_title}\nRange: {int(comm_range)}m - Max Degree: {max_deg} - {len(runs)} runs', 
+                        fontsize=14, fontweight='bold', y=0.98)
+            
+            plt.tight_layout(rect=[0, 0, 1, 0.96])  # Leave space for suptitle
+            
+            # Create filename with all thresholds
+            threshold_str = "_".join([f"{int(t)}s" for t in time_thresholds])
+            plot_filename = f"{plots_dir}/range{int(comm_range)}_maxdeg{max_deg}_{mode_name}_thresholds_{threshold_str}.png"
+            plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"  Saved: {plot_filename}")
+
+def plot_centralization_metrics_examples():
+    """
+    Visualize centralization metrics with examples:
+    - File 1: Sparse representation (concentrated distribution + metrics with adding zeros)
+    - File 2: Redistributing mass (showing transition from sparse to uniform)
+    Both files use horizontal layout (1 row × 2 columns)
+    """
+    
+    max_nodes = 10
+    
+    # Calculate metrics for adding zeros
+    gini_adding = []
+    s_score_adding = []
+    
+    for n in range(2, max_nodes + 1):
+        data = [10.0] + [0.0] * (n - 1)
+        gini = calculate_gini_coefficient(data)
+        s_score = calculate_centralization_score(data, num_links=sum(data))
+        gini_adding.append(gini)
+        s_score_adding.append(s_score)
+    
+    # FILE 1: Sparse representation (horizontal layout)
+    fig1, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Left: Show the 10-element array with concentration
+    initial_data = [10.0] + [1.0] * 9
+    
+    ax1.bar(range(len(initial_data)), initial_data, width=0.6, 
+            color='steelblue', edgecolor='black', alpha=0.7)
+    ax1.set_ylabel('Value', fontsize=11)
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.set_xlim(-0.5, max_nodes - 0.5)
+    ax1.set_xticks([])  # Remove x-axis ticks
+    
+    # Right: Both metrics for adding zeros
+    x_adding = list(range(2, max_nodes + 1))
+    
+    ax2_twin = ax2.twinx()
+    
+    line1 = ax2.plot(x_adding, gini_adding, marker='o', linewidth=2.5, markersize=6, 
+                     color='darkgreen', label='Gini Coefficient')
+    ax2.set_xlabel('Number of Nodes', fontsize=11)
+    ax2.set_ylabel('Gini Coefficient', fontsize=11, color='darkgreen')
+    ax2.tick_params(axis='y', labelcolor='darkgreen')
+    ax2.grid(True, alpha=0.3)
+    
+    line2 = ax2_twin.plot(x_adding, s_score_adding, marker='s', linewidth=2.5, markersize=6, 
+                          color='darkorange', label='S-score')
+    ax2_twin.set_ylabel('Centralization Score S', fontsize=11, color='darkorange')
+    ax2_twin.tick_params(axis='y', labelcolor='darkorange')
+    
+    # Combine legends
+    lines = line1 + line2
+    labels = [l.get_label() for l in lines]
+    ax2.legend(lines, labels, loc='best')
     
     plt.tight_layout()
-    plt.savefig('figures/deliverability_vs_communication_range.png',
-                bbox_inches='tight', dpi=300)
+    plt.savefig('figures/centralization_sparse.png', dpi=300, bbox_inches='tight')
     plt.close()
+    
+    # FILE 2: Redistributing mass (horizontal layout)
+    fig2, (ax3, ax4) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Left: Show the uniform distribution
+    final_data = [1.0] * 10
+    
+    ax3.bar(range(len(final_data)), final_data, width=0.6, 
+            color='steelblue', edgecolor='black', alpha=0.7)
+    ax3.set_ylabel('Value', fontsize=11)
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.set_xlim(-0.5, max_nodes - 0.5)
+    ax3.set_xticks([])  # Remove x-axis ticks
+    
+    # Right: Calculate and plot redistribution metrics
+    num_steps = 30
+    gini_redistributing = []
+    s_score_redistributing = []
+    
+    for step in range(num_steps + 1):
+        alpha = step / num_steps
+        sparse = np.array([10.0] + [0.0] * 9)
+        uniform = np.array([1.0] * 10)
+        data = (1 - alpha) * sparse + alpha * uniform
+        
+        gini = calculate_gini_coefficient(data)
+        s_score = calculate_centralization_score(data, num_links=sum(data))
+        gini_redistributing.append(gini)
+        s_score_redistributing.append(s_score)
+    
+    x_redistributing = np.linspace(0, 1, num_steps + 1)
+    
+    ax4_twin = ax4.twinx()
+    
+    line3 = ax4.plot(x_redistributing, gini_redistributing, marker='o', linewidth=2.5, markersize=4, 
+                     color='darkgreen', label='Gini Coefficient')
+    ax4.set_xlabel('Transition: Concentrated (0) → Uniform (1)', fontsize=11)
+    ax4.set_ylabel('Gini Coefficient', fontsize=11, color='darkgreen')
+    ax4.tick_params(axis='y', labelcolor='darkgreen')
+    ax4.grid(True, alpha=0.3)
+    ax4.set_xlim(-0.05, 1.05)
+    
+    line4 = ax4_twin.plot(x_redistributing, s_score_redistributing, marker='s', linewidth=2.5, markersize=4, 
+                          color='darkorange', label='S-score')
+    ax4_twin.set_ylabel('Centralization Score S', fontsize=11, color='darkorange')
+    ax4_twin.tick_params(axis='y', labelcolor='darkorange')
+    
+    # Combine legends
+    lines = line3 + line4
+    labels = [l.get_label() for l in lines]
+    ax4.legend(lines, labels, loc='best')
+    
+    plt.tight_layout()
+    plt.savefig('figures/centralization_redistribution.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Centralization metrics plots saved!")
+    print(f"  - centralization_sparse.png")
+    print(f"  - centralization_redistribution.png")
+    print(f"Adding zeros: Gini goes from {gini_adding[0]:.3f} to {gini_adding[-1]:.3f}")
+    print(f"Adding zeros: S-score goes from {s_score_adding[0]:.3f} to {s_score_adding[-1]:.3f}")
+    print(f"Redistributing: Gini goes from {gini_redistributing[0]:.3f} to {gini_redistributing[-1]:.3f}")
+    print(f"Redistributing: S-score goes from {s_score_redistributing[0]:.3f} to {s_score_redistributing[-1]:.3f}")
 
+def plot_creation_time_vs_latency(delivered_messages: list[Message], ranges: list[int]):
+    """
+    Plot message creation time vs latency (delivery time).
+    
+    Creates separate plots for:
+    - Intra-cluster (mode 0)
+    - Inter-cluster (mode 1)
+    
+    Each point represents one delivered message, colored by communication range.
+    
+    Args:
+        delivered_messages: List of successfully delivered messages
+    """
+    
+    # Separate messages by mode
+    intra_messages = [msg for msg in delivered_messages if msg.mode == 0]
+    inter_messages = [msg for msg in delivered_messages if msg.mode == 1]
+
+
+    print(f"  Intra-cluster messages: {len(intra_messages)}")
+    print(f"  Inter-cluster messages: {len(inter_messages)}")
+    
+    # Get unique communication ranges
+    # ranges = sorted(set(msg.communication_range for msg in delivered_messages))
+    colors = plt.cm.viridis(np.linspace(0, 1, len(ranges)))
+    range_to_color = {r: colors[i] for i, r in enumerate(ranges)}
+    
+    # Create 2x1 subplot layout
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+    
+    # Helper function to smooth data and calculate statistics for continuous line
+    def smooth_and_aggregate(messages, num_points=100):
+        """Create smooth continuous line with shaded IQR region"""
+        if not messages:
+            return [], [], [], []
+        
+        creation_times = np.array([msg.creation_time for msg in messages])
+        latencies = np.array([msg.delivery_time for msg in messages])
+        
+        # Sort by creation time
+        sort_idx = np.argsort(creation_times)
+        creation_times = creation_times[sort_idx]
+        latencies = latencies[sort_idx]
+        
+        # Create smooth x-axis points
+        min_time = creation_times.min()
+        max_time = creation_times.max()
+        x_smooth = np.linspace(min_time, max_time, num_points)
+        
+        # Calculate rolling statistics using a window approach
+        window_size = len(creation_times) // 10  # Adaptive window size
+        window_size = max(window_size, 5)  # At least 5 points
+        
+        median_smooth = []
+        q25_smooth = []
+        q75_smooth = []
+        
+        for x_val in x_smooth:
+            # Find points within a local window around x_val
+            window_width = (max_time - min_time) / 20  # 5% of range
+            mask = np.abs(creation_times - x_val) <= window_width
+            
+            if np.sum(mask) > 0:
+                local_latencies = latencies[mask]
+                median_smooth.append(np.median(local_latencies))
+                q25_smooth.append(np.percentile(local_latencies, 25))
+                q75_smooth.append(np.percentile(local_latencies, 75))
+            else:
+                # If no points in window, use nearest neighbor
+                nearest_idx = np.argmin(np.abs(creation_times - x_val))
+                median_smooth.append(latencies[nearest_idx])
+                q25_smooth.append(latencies[nearest_idx])
+                q75_smooth.append(latencies[nearest_idx])
+        
+        median_smooth = np.array(median_smooth)
+        q25_smooth = np.array(q25_smooth)
+        q75_smooth = np.array(q75_smooth)
+        
+        return x_smooth, median_smooth, q25_smooth, q75_smooth
+    
+    # Plot intra-cluster
+    # for range_idx, comm_range in enumerate(ranges):
+    #     range_msgs = [msg for msg in intra_messages if msg.communication_range == comm_range]
+    #     if range_msgs:
+    #         print(f"    Intra-cluster range {comm_range}m: {len(range_msgs)} messages")
+            
+    #         x_smooth, median_smooth, q25_smooth, q75_smooth = smooth_and_aggregate(range_msgs)
+            
+    #         if len(x_smooth) > 0:
+    #             color = range_to_color[comm_range]
+                
+    #             # Plot the median line
+    #             ax1.plot(x_smooth, median_smooth, 
+    #                     linewidth=2.5,
+    #                     color=color,
+    #                     label=f'{int(comm_range)}m range',
+    #                     alpha=0.9)
+                
+    #             # Add shaded IQR region (25th to 75th percentile)
+    #             ax1.fill_between(x_smooth, 
+    #                             q25_smooth, 
+    #                             q75_smooth,
+    #                             color=color,
+    #                             alpha=0.2)
+    
+    # ax1.set_xlabel('Message Creation Time (seconds)', fontsize=12)
+    # ax1.set_ylabel('Latency (seconds)', fontsize=12)
+    # ax1.set_title('Intra-cluster: Creation Time vs Latency', fontsize=14)
+    # ax1.set_yscale('log')
+    # ax1.grid(True, alpha=0.3)
+    # ax1.legend(loc='best', fontsize=10)
+    
+    # Plot inter-cluster
+    for range_idx, comm_range in enumerate(ranges):
+        range_msgs = [msg for msg in inter_messages if msg.communication_range == comm_range]
+        if range_msgs:
+            print(f"    Inter-cluster range {comm_range}m: {len(range_msgs)} messages")
+            
+            x_smooth, median_smooth, q25_smooth, q75_smooth = smooth_and_aggregate(range_msgs)
+            
+            if len(x_smooth) > 0:
+                color = range_to_color[comm_range]
+                
+                # Plot the median line
+                ax2.plot(x_smooth, median_smooth, 
+                        linewidth=2.5,
+                        color=color,
+                        label=f'{int(comm_range)}m range',
+                        alpha=0.9)
+                
+                # Add shaded IQR region (25th to 75th percentile)
+                ax2.fill_between(x_smooth, 
+                                q25_smooth, 
+                                q75_smooth,
+                                color=color,
+                                alpha=0.2)
+    
+    ax2.set_xlabel('Message Creation Time (seconds)', fontsize=12)
+    ax2.set_ylabel('Latency (seconds)', fontsize=12)
+    ax2.set_title('Inter-cluster: Creation Time vs Latency', fontsize=14)
+    ax2.set_yscale('log')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(loc='best', fontsize=10)
+    
+    plt.tight_layout()
+    fpath = 'figures/creation_time_vs_latency.png'
+    plt.savefig(fpath, dpi=300, bbox_inches='tight')
+    print(f"Saved creation time vs latency plot: {fpath}")
+    plt.close()
+    
+    # print("Creation time vs latency plot saved!")
+    print(f"  Intra-cluster messages: {len(intra_messages)}")
+    print(f"  Inter-cluster messages: {len(inter_messages)}")
 def main():
-    with open("delivered_messages.pkl", 'rb') as f:
-        messages: list[Message] = pickle.load(f)
-    
-    with open("all_messages.pkl", 'rb') as f:
-        all_messages: list[Message] = pickle.load(f)
+    # plot_centralization_metrics_examples()
+    print("Loading message data from pickle files...")
 
-    unique_ranges = sorted(set(msg.communication_range for msg in messages))
-    print(f"Unique ranges: {unique_ranges}")
+    randomized_all_messages_path = f"all_messages_randomized0.pkl"
+    with open(randomized_all_messages_path, 'rb') as f:
+        randomized_all_messages: list[Message] = pickle.load(f)
 
-    df = create_dataframe(messages)
-    
-    plot_deliverability_vs_communication_range(all_messages, messages)
-    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=10.0)  # Individual subplots
-    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=10.0)  # Aggregated plot
-    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=60.0)  # Individual subplots
-    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=60.0)  # Aggregated plot
-    plot_delivery_probability_vs_distance_by_range(all_messages, messages, time_threshold=120.0)  # Also generate for 2 minutes
-    plot_delivery_probability_vs_distance_aggregated(all_messages, messages, time_threshold=120.0)  # Aggregated for 2 minutes
-    plot_hop_counts(df)
-    plot_distance_vs_hopcount_by_range(df)
-    plot_latency_frequency_by_range(messages)
-    plot_bitrate_vs_distance(messages)
-    plot_correlation_heatmap(messages)
-    plot_message_frequency_by_distance(messages)
-    plot_node_degree_vs_communication_radius(messages)
-    plot_node_degree_vs_hop_count(messages)
-    plot_hop_latency_vs_communication_radius(messages)
-    plot_hop_latency_vs_node_degree(messages)
-    
-    print("All plots generated successfully!")
+    randomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
+    with open(randomized_delivered_messages_path, 'rb') as f:
+        randomized_delivered_messages: list[Message] = pickle.load(f)
+
+    # nonrandomized_delivered_messages_path = f"delivered_messages_randomized0.pkl"
+    # with open(nonrandomized_delivered_messages_path, 'rb') as f:
+    #     nonrandomized_delivered_messages: list[Message] = pickle.load(f)
+
+    with open(f"topologies_randomized0.pkl", 'rb') as f:
+        randomized_topologies: dict[ConfigurationWithRun, Topology] = pickle.load(f)
+
+    # # # HAVE LOADED
+    # # with open("topologies_randomized0.pkl", 'rb') as f:
+    # #     nonrandomized_topologies: dict[Configuration, Topology] = pickle.load(f)
+
+    # plot_creation_time_vs_latency(randomized_delivered_messages, ranges=[120])
+
+    # print("Generating simple analysis plots...")
+    # plot_message_delivery_distribution(randomized_all_messages, randomized_delivered_messages)
+
+    # print("Generating max degree vs. throughput analysis plots...")
+    # plot_max_degree_vs_throughput(randomized_delivered_messages)
+    # plot_max_degree_vs_throughput_run_comparison(randomized_delivered_messages)
+
+    # # NOW
+    # # print("Generating max degree vs. centralization metrics plots...")
+    # # plot_metrics_vs_max_degree(randomized_delivered_messages, randomized_topologies)
+
+    # # DONE
+    # print("Generating latency vs. max degree plots...")
+    # plot_latency_vs_max_degree(randomized_delivered_messages, randomized_topologies)
+
+    # # NOW 
+    print("Generating latency vs. centralization metrics plots...")
+    plot_latency_vs_centralization(randomized_delivered_messages, randomized_topologies)
+
+    # print("Generating centralization vs. delivery probability plots...")
+    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=float('inf'))  # All deliveries
+    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=10.0)
+    # plot_centralization_vs_delivery(randomized_all_messages, randomized_delivered_messages, randomized_topologies, time_threshold=240.0)
+
+    # # DONE
+    # # print("Generating topology and distance matrix plots...")
+    # # plot_topology_and_distance_matrices(nondomized_all_messages, nonrandomized_topologies)
+
+    # # NOW
+    # print("Generating delivery success probability plots...")
+    # plot_delivery_success_matrices(nonrandomized_all_messages, nonrandomized_delivered_messages, 10.0, 60.0)
+
+    print("\nAll plots generated successfully!")
 
 if __name__ == "__main__":
     main()

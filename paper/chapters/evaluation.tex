@@ -1,0 +1,38 @@
+Finally, to evaluate the performance of different topologies by their centralization metrics, we use the Gini and Centralization Score~$\mathscr{S}$ and plot them against the maximum constrained node degree.
+
+\begin{figure}[htbp]
+    \centering
+    % \includegraphics[width=0.5\textwidth]{figures/centralization_metrics_vs_max_degree_inter_high_dist.png}
+    \includegraphics[width=0.5\textwidth]{figures/vertical_degree_vs_centralization_inter_cluster.png}
+    \caption{Centralization vs. max node degree - inter-cluster communication}
+\label{fig:centralization-vs-max-deg}
+\end{figure}
+
+Figure~\ref{fig:centralization-vs-max-deg} shows how the different centralization metrics introduced in section~\ref{sec:state} correlate with an increase in the maximum constrained node degree.
+An extended version of this plot, comparing the aforementioned centralization metrics to the $L_0$ norm also in the intra-cluster communication mode, can be found in the appendix, figure~\ref{fig:centralization-vs-max-deg-full}.
+As evident from this plot, the Gini coefficient has a higher variance in comparison to the $\mathscr{S}$ score, which appears to be more stable as the maximum constrained node degree increases.
+This indicates that the Gini coefficeint is more appropriate to measure resilience.
+
+Then, in figure~\ref{fig:latency-vs-maxdeg-90} we plot the different centralization metrics against the maximum node degree for the maximum communication radius of $90$m, to understand how the peer degree impacts the end-to-end message latency at a typical BLE 1M PHY range.
+We bin all the messages found for the 90m communication range to three distance categories: short ($\le 120$ m), medium ($120-220$m), and long ($> 220$m) distances.
+We can see an initial increase in order of magnitude in the latency, as the maximum node degree increases from two to three, but as we approach higher degrees of around ten, the mean latency actually decreases, especialy in long-distance messages.
+Additionally, the long tail of the short distance messages indicates most direct links are short ranged, as expected.
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/lat_degree_inter_cluster_90.png}
+    \caption{Latency vs. Node degree at 90m range- inter-cluster communication}
+\label{fig:latency-vs-maxdeg-90}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.5\textwidth]{figures/latency_vs_gini_inter_all_dist.png}
+    \includegraphics[width=0.5\textwidth]{figures/latency_vs_s_score_inter_all_dist.png}
+    \caption{Latency vs. Centralization - inter-cluster communication}
+\label{fig:latency-vs-centralization}
+\end{figure}
+Figure~\ref{fig:latency-vs-centralization} shows how centralization correlates with mean message delivery latency. The top subplot showcases the Gini coefficient on the X axis, while the bottom subplot showcases the $\mathscr{S}$ Score.
+The Gini plot generally is able to extract more information, as the Gini coefficient is sensitive to the overall distribution of data, where the $\mathscr{S}$-Score is more sensitive to extreme values: the Gini score ranges from about 0.1 (the left extreme point of the X axis), until almost 1.0 (at the extreme right); this tells us, that it is able to capture more variance in the data. In comparison, the bottom $\mathscr{S}$-Score subplot generally saturates very quickly, offering a breadth of less than $0.1$ of variance for most communication radius.
+In Gini plot, a clear relationship is visible for most communication radii between an increase in the centralization scores, and an increase in the end-to-end message latency.
+The exception lies with the 90m communication radius, which exhibits a negative correlation between centralization and latency: the latency decreases with an increase in centralization. This could be attributed to the fact that nodes in this communication radius were able to establish direct links with their intended recipients, which reduces the amount of hops required to deliver a message.
+% Here, the $\mathscr{S}$ Score is more sensitive to the outliers in the higher latency ranges, which indicates it is a better metric to capture the impact of centralization on message latency, than the Gini coefficient.

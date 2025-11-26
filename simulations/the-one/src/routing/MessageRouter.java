@@ -4,13 +4,9 @@
  */
 package routing;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
+import java.util.stream.Collectors;
+
 import core.Application;
 import core.Connection;
 import core.DTNHost;
@@ -391,6 +387,7 @@ public abstract class MessageRouter {
 			// -> put to buffer
 			addToMessages(aMessage, false);
 		} else if (isFirstDelivery) {
+			StaticHostMessageGenerator.deliveredMessages++;
 			this.deliveredMessages.put(id, aMessage);
 		} else if (outgoing == null) {
 			// Blacklist messages that an app wants to drop.
@@ -669,6 +666,19 @@ public abstract class MessageRouter {
 	 * @return The replicate
 	 */
 	public abstract MessageRouter replicate();
+
+	/**
+	 * Purge the message buffer from all messages related to a specific host pair
+	 * @param from DTNHost to purge messages from
+	 * @param to DTNHost to purge messages to
+	 */
+	public void purge(DTNHost from, DTNHost to) {
+		var messageIDs = this.messages.values().stream()
+				.filter(m -> m.getFrom() == from && m.getTo() == to)
+				.map(Message::getId)
+				.collect(Collectors.toSet());
+		messageIDs.forEach(messageID -> deleteMessage(messageID, true));
+	}
 
 	/**
 	 * Returns a String presentation of this router

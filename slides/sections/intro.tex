@@ -1,0 +1,39 @@
+\section{Introduction}
+\begin{frame}{Motivation}
+    Provide resilient distributed communication during Internet shutdowns in case of disasters% or political unrest %(Gaza war, political control in Palestine)
+\end{frame}
+\begin{frame}{Problems}
+    \begin{itemize}
+        \item Consolidation of power in Internet infrastructure due to running services, protocol, and algorithms in a few closed providers
+        \item Centralization enables both rapid information diffusion but also censorship, failure points, and control, worsened by disasters and political unrest
+    \end{itemize}
+    \begin{minipage}{1.0\textwidth}
+        \begin{figure}
+            \centering
+            \includegraphics[width=0.45\textwidth]{pics/twitter-censorship.png}
+            \includegraphics[width=0.45\textwidth]{pics/telegram-ddos.jpg}
+        \end{figure}
+    \end{minipage}
+\end{frame}
+
+\begin{frame}{Solution Approach}
+    Towards addressing fragile consolidation of power, resilient decentralization is key!
+    \begin{itemize}
+        \item Providing connectivity without infrastructure: p2p networks
+        \begin{itemize}
+            \item Structured: Kademlia~\cite{kademlia}, Chord~\cite{chord}, more recently DLT~\cite{comms-cost}: ETH~\cite{guzman24}, Bitcoin~\cite{bitcoin}, Ripple XRP~\cite{guzman22}, etc
+            \item \textbf{Unstructured}: FireChat~\cite{firechat}, Twimight~\cite{twimight}, Briar~\cite{briar}, bitchat~\cite{bitchat}, Amigo~\cite{amigo}
+        \end{itemize}
+    \end{itemize}
+    To enable sustainable critical communication for all: use efficient ubiquitous p2p protocols
+    \begin{itemize}
+        \item \textbf{BLE}
+        \item Others: WiFi-Direct, Zigbee, LoRA~\cite{wifi-ble-power}
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Contribution}
+    \textbf{Research Question} How to provide resilient decentralized communication over unstructured p2p networks using efficient p2p communication protocols in the presence of network disruptions?
+
+    \textbf{Approach} Collect empirical data to parameterize signal, simulate distributed network topologies, measure resilience w.r.t centralization metrics
+\end{frame}

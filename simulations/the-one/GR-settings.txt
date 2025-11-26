@@ -22,29 +22,28 @@ Group.speed = 0, 0
 Group.nrofInterfaces = 1
 Group.interface1 = bluetoothInterface
 
-# Message related settings
+# Message generator related settings
 Events.nrof = 1
 Events1.class = StaticHostMessageGenerator
-
-## Interface-specific settings:
-# "Bluetooth" interface for all nodes
-bluetoothInterface.type = BluetoothInterface
-bluetoothInterface.transmitRange = 120
-bluetoothInterface.transmitSpeed = 0 # Dummy setting required for simulator to properly work
-
-Events1.count = 1000
-Events1.binSize = 10
+Events1.count = 20
 Events1.interval = 1
 Events1.size = 247
 Events1.hosts = 0,72
 Events1.toHosts = 0,72
 Events1.prefix = M
 
+
+## Interface-specific settings:
+# "Bluetooth" interface for all nodes
+bluetoothInterface.type = BluetoothInterface
+bluetoothInterface.transmitRange = 100
+bluetoothInterface.transmitSpeed = 0 # Dummy setting required for simulator to properly work
+
 #####[START]>Group
 Scenario.nrofHostGroups = 12
 Group.nrofHosts = 6
 Group.numberOfClusters = 12
-Group.clusterSize = 120
+Group.clusterSize = 100
 Group.offsetX = 50
 Group.offsetY = 50
 Group1.clusterID = 0

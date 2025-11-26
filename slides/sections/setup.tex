@@ -1,0 +1,184 @@
+\section{Setup}
+\begin{frame}{Testbed}
+    \begin{itemize}
+        \item \textbf{What} Measure real-life outdoor signal propagation of BLE: measure RSSI of BLE advertisements at increasing distances until failure
+        \item \textbf{How} Two standard Raspberry Pi 3B+ boards, open field with minimal interference
+        \item \textbf{Why} Obtain empirical data to parameterize simulations of BLE communication at scale
+    \end{itemize}
+    \begin{tikzpicture}[
+        >=stealth,
+        node distance=1.5cm,
+        timeline/.style={draw, thick, -},
+        msg/.style={draw=blue!70!black, thick, ->},
+        header/.style={font=\sffamily\Large},
+        distlabel/.style={font=\sffamily\large}]
+
+        \begin{scope}[local bounding box=LeftDiag]
+            
+            \coordinate (S1_top) at (0,0);
+            \coordinate (R1_top) at (2,0);
+            \coordinate (S1_bot) at (0,-3.5);
+            \coordinate (R1_bot) at (2,-3.5);
+
+            \draw[timeline] (S1_top) -- (S1_bot);
+            \draw[timeline] (R1_top) -- (R1_bot);
+
+            \node[header, anchor=south] at (S1_top) {Sender};
+            \node[header, anchor=south] at (R1_top) {Receiver};
+
+            \draw[<->, thick, blue!60!black] ($(S1_top)+(0.2,0.5)$) -- ($(R1_top)+(-0.2,0.5)$) 
+                node[midway, above, black, distlabel] {0m};
+
+            \coordinate (t1_start) at (0, -0.75);
+            \coordinate (t1_end)   at (2, -1.75);
+            
+            \draw[msg] (t1_start) -- (t1_end);
+            
+            \node[anchor=east, align=right] at ($(t1_start)+(-0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small tx
+            };
+            
+            \node[anchor=west, align=left] at ($(t1_end)+(0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small rx
+            };
+
+            \coordinate (t2_start) at (0, -2.25);
+            \coordinate (t2_end)   at (2, -3.25);
+            
+            \draw[msg] (t2_start) -- (t2_end);
+            \node[anchor=east, align=right] at ($(t2_start)+(-0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small tx
+            };
+            \node[anchor=west, align=left] at ($(t2_end)+(0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small rx
+            };
+
+        \end{scope}
+        \begin{scope}[shift={(7,0)}, local bounding box=RightDiag]
+            
+            \coordinate (S1_top) at (0,0);
+            \coordinate (R1_top) at (2,0);
+            \coordinate (S1_bot) at (0,-3.5);
+            \coordinate (R1_bot) at (2,-3.5);
+
+            \draw[timeline] (S1_top) -- (S1_bot);
+            \draw[timeline] (R1_top) -- (R1_bot);
+
+            \node[header, anchor=south] at (S1_top) {Sender};
+            \node[header, anchor=south] at (R1_top) {Receiver};
+
+            \draw[<->, thick, blue!60!black] ($(S1_top)+(0.2,0.5)$) -- ($(R1_top)+(-0.2,0.5)$) 
+                node[midway, above, black, distlabel] {10m};
+
+            \coordinate (t1_start) at (0, -0.75);
+            \coordinate (t1_end)   at (2, -1.75);
+            
+            \draw[msg] (t1_start) -- (t1_end);
+            \node[anchor=east, align=right] at ($(t1_start)+(-0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small tx
+            };
+            
+            \node[anchor=west, align=left] at ($(t1_end)+(0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small rx
+            };
+
+            \coordinate (t2_start) at (0, -2.25);
+            \coordinate (t2_end)   at (2, -3.25);
+            
+            \draw[msg] (t2_start) -- (t2_end);
+            
+            \node[anchor=east, align=right] at ($(t2_start)+(-0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small tx
+            };
+            \node[anchor=west, align=left] at ($(t2_end)+(0.1,0)$) {
+                \includegraphics[width=0.4cm]{pics/pi.png} \\[-0.5em] \sffamily\small rx
+            };
+        \end{scope}
+    \end{tikzpicture}
+\end{frame}
+\begin{frame}{Testbed}
+    \begin{itemize}
+        \item Rx pi scan window 600s, tx pi advertisement interval 20ms, repeat 20 times
+        \item Measured RSSI at distances: 0m, 1m, 5m, 10m, incrementing by 10m until no more ads received: 100m
+    \end{itemize}
+    \begin{minipage}{0.75\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/rssi_vs_distance.png}
+        \captionof{figure}{Mean RSSI vs. Distance}
+    \end{minipage}
+\end{frame}
+\begin{frame}{Testbed}
+    \begin{minipage}{0.9\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/rssi_cdf.png}
+        \captionof{figure}{RSSI CDF}
+    \end{minipage}
+\end{frame}
+\begin{frame}{Testbed}
+    \begin{itemize}
+        \item Model advertisement success probability vs. distance using empirical RSSI data
+        \item Use number of advertisements received at $d_0=0$
+        \item Probability of advertisement being received at distance $d$:
+        \[
+            P_{adv}(d) = \frac{\text{Number of received advertisements at } d}{\text{Total number of received advertisements at } d_0}
+        \]
+    \end{itemize}
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/advertisement_success_probability_base0.png}
+    \captionof{figure}{Advertisement Success Probability vs. Distance}
+    % \begin{tabular}{rrrr}
+    %     \toprule
+    %     Distance (m) & Mean RSSI (dBm) & Std Dev & Num Samples \\
+    %     \midrule
+    %     0.0  & $-28.03$ & 1.21 &  43,866 \\
+    %     1.0  & $-55.14$ & 4.62 &  38,600 \\
+    %     5.0  & $-74.58$ & 4.77 &  37,130 \\
+    %     10.0 & $-82.47$ & 6.21 &  33,171 \\
+    %     20.0 & $-86.54$ & 5.05 &  34,526 \\
+    %     30.0 & $-87.45$ & 3.55 &  30,863 \\
+    %     40.0 & $-95.21$ & 2.76 &   7,400 \\
+    %     50.0 & $-97.50$ & 2.44 &   1,081 \\
+    %     60.0 & $-98.82$ & 2.10 &     281 \\
+    %     70.0 & $-99.00$ & 3.74 &       3 \\
+    %     80.0 & $-96.33$ & 1.70 &       3 \\
+    %     90.0 & $-98.25$ & 4.23 &      12 \\
+    %     \bottomrule
+    % \end{tabular}
+\end{frame}
+
+\begin{frame}{Simulations}
+    \begin{itemize}
+        \item \textbf{What} Measure resilience of communication clusters established using empirical BLE signal stochastics
+        \item \textbf{How} The ONE Simulator, $400m\times400m$ L-shaped field, divided to $100m \times 100m$ grid cells
+    \end{itemize}
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/run.jpg}
+        \captionof{figure}{Simulation Area}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.55\textwidth}
+        \centering
+        \begin{itemize}
+            \item 12 cluster cells, 6 hosts per cell, static movement model
+            \item Epidemic Router, same amount of messages sent between each host pair
+            \item 25 simulator runs consist of: network interface communication range, maximum peer degree, communication mode
+        \end{itemize}
+    \end{minipage}
+\end{frame}
+\begin{frame}{Simulations}
+    \begin{itemize}
+        \item Parameterize network interface bandwidth based on link distance using RSSI results from testbed
+        \item Use log-normal path loss model~\cite{pathloss} to interpolate singal propagation decay between discrete distance points
+        \item BLE 1M PHY~\cite{adaptive-phy}: Use maximum channel bandwidth of 1 Mbps at $\le 1m$ distance to deduce message transfer time
+    \end{itemize}
+
+    % \centering
+    % \includegraphics[width=0.6\textwidth]{figures/message_distance_distribution.png}
+    % \captionof{figure}{Message Distance Distribution}
+\end{frame}
+\begin{frame}{Simulations}
+    \centering
+    \includegraphics[width=\textwidth]{figures/range90_maxdeg5_topology_distance.png}
+    \captionof{figure}{Topological Matrix for communication range 90m and max peer degree 5}
+\end{frame}

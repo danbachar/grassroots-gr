@@ -1,0 +1,61 @@
+# Run 0 Start Timestamp: 1762270265.6800787
+# Run 0 End Timestamp: 1762270325.765669
+🤝 Run 1 complete. Samples: 2103, Mean RSSI: -28.08 ± 3.29 dBm.
+# Run 1 Start Timestamp: 1762270325.794709
+# Run 1 End Timestamp: 1762270385.864079
+🤝 Run 2 complete. Samples: 2254, Mean RSSI: -28.09 ± 1.02 dBm.
+# Run 2 Start Timestamp: 1762270385.8920412
+# Run 2 End Timestamp: 1762270445.957401
+🤝 Run 3 complete. Samples: 2197, Mean RSSI: -28.12 ± 1.03 dBm.
+# Run 3 Start Timestamp: 1762270445.9847987
+# Run 3 End Timestamp: 1762270506.0465658
+🤝 Run 4 complete. Samples: 2222, Mean RSSI: -28.11 ± 1.01 dBm.
+# Run 4 Start Timestamp: 1762270506.0745041
+# Run 4 End Timestamp: 1762270566.1685832
+🤝 Run 5 complete. Samples: 2169, Mean RSSI: -28.11 ± 1.00 dBm.
+# Run 5 Start Timestamp: 1762270566.1957257
+# Run 5 End Timestamp: 1762270626.2682586
+🤝 Run 6 complete. Samples: 2223, Mean RSSI: -28.06 ± 0.97 dBm.
+# Run 6 Start Timestamp: 1762270626.2959824
+# Run 6 End Timestamp: 1762270686.3611498
+🤝 Run 7 complete. Samples: 2160, Mean RSSI: -28.08 ± 0.98 dBm.
+# Run 7 Start Timestamp: 1762270686.388403
+# Run 7 End Timestamp: 1762270746.4481547
+🤝 Run 8 complete. Samples: 2163, Mean RSSI: -28.01 ± 0.99 dBm.
+# Run 8 Start Timestamp: 1762270746.4755473
+# Run 8 End Timestamp: 1762270806.5503094
+🤝 Run 9 complete. Samples: 2274, Mean RSSI: -27.99 ± 0.98 dBm.
+# Run 9 Start Timestamp: 1762270806.5797672
+# Run 9 End Timestamp: 1762270866.6410515
+🤝 Run 10 complete. Samples: 2206, Mean RSSI: -28.01 ± 0.98 dBm.
+# Run 10 Start Timestamp: 1762270866.6691206
+# Run 10 End Timestamp: 1762270926.734434
+🤝 Run 11 complete. Samples: 2318, Mean RSSI: -28.03 ± 0.98 dBm.
+# Run 11 Start Timestamp: 1762270926.7680576
+# Run 11 End Timestamp: 1762270986.854798
+🤝 Run 12 complete. Samples: 2326, Mean RSSI: -28.02 ± 0.98 dBm.
+# Run 12 Start Timestamp: 1762270986.8879821
+# Run 12 End Timestamp: 1762271046.946398
+🤝 Run 13 complete. Samples: 2294, Mean RSSI: -28.02 ± 0.98 dBm.
+# Run 13 Start Timestamp: 1762271046.9750757
+# Run 13 End Timestamp: 1762271107.0538058
+🤝 Run 14 complete. Samples: 2323, Mean RSSI: -28.03 ± 0.99 dBm.
+# Run 14 Start Timestamp: 1762271107.0829663
+# Run 14 End Timestamp: 1762271167.1470222
+🤝 Run 15 complete. Samples: 2318, Mean RSSI: -27.98 ± 1.00 dBm.
+# Run 15 Start Timestamp: 1762271167.1755733
+# Run 15 End Timestamp: 1762271227.2378333
+🤝 Run 16 complete. Samples: 2255, Mean RSSI: -27.94 ± 1.01 dBm.
+# Run 16 Start Timestamp: 1762271227.2665856
+# Run 16 End Timestamp: 1762271287.332668
+🤝 Run 17 complete. Samples: 2347, Mean RSSI: -27.94 ± 1.01 dBm.
+# Run 17 Start Timestamp: 1762271287.3621902
+# Run 17 End Timestamp: 1762271347.4316204
+🤝 Run 18 complete. Samples: 2335, Mean RSSI: -27.95 ± 1.01 dBm.
+# Run 18 Start Timestamp: 1762271347.4621155
+# Run 18 End Timestamp: 1762271407.5285788
+🤝 Run 19 complete. Samples: 2239, Mean RSSI: -28.00 ± 1.01 dBm.
+# Run 19 Start Timestamp: 1762271407.5565758
+# Run 19 End Timestamp: 1762271467.6117282
+🤝 Run 20 complete. Samples: 1140, Mean RSSI: -27.93 ± 1.00 dBm.
+⏱️ Total elapsed time: 1201.95 seconds, total ads: 43866, writing summary to ranges_home_with_summary/0.0/rssi_log.csv_summary.csv

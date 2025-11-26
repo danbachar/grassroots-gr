@@ -1,0 +1,165 @@
+\section{State-of-the-Art}
+\begin{frame}{Resilience Metrics}
+    \begin{itemize}
+        % \item Building resilient partially-offline p2p networks requires a paradigm shift: IP packet forwarding vs. Store-Carry-Forward
+        \item Distributed resilience in communication, not resources: overall similar node degrees in topology%: prevent centralization, single points of failure
+        \item Compare different metrics: $L_0$ norm, $\mathscr{S}$-Score~\cite{dependence}, Gini~\cite{sparsity}
+    \end{itemize}
+
+    \begin{figure}[H]
+        \centering
+        \begin{tikzpicture}[
+            node/.style={circle, draw=black},
+            edge/.style={draw, thick, black}
+        ]
+        \begin{scope}[xshift=0cm]
+            \node[node] (s0) at (0,0) {5};
+            \node[node] (s1) at (90:1.5) {1};
+            \node[node] (s2) at (162:1.5) {1};
+            \node[node] (s3) at (18:1.5) {1};
+            \node[node] (s4) at (234:1.5) {1};
+            \node[node] (s5) at (306:1.5) {1};
+            
+            \draw[edge] (s0) -- (s1);
+            \draw[edge] (s0) -- (s2);
+            \draw[edge] (s0) -- (s3);
+            \draw[edge] (s0) -- (s4);
+            \draw[edge] (s0) -- (s5);
+        \end{scope}
+        \end{tikzpicture}
+        \caption{Star topology, $L_0=1.0$}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Resilience Metrics: the $\mathscr{S}$-Score}
+    \begin{itemize}
+        \item Metric coming from US antitrust laws to measure market concentration
+        \item Measures similarity to maximally centralized topology
+    \end{itemize}
+    \begin{figure}[H]
+        \centering
+        \begin{tikzpicture}[
+            node/.style={circle, draw=black},
+            edge/.style={draw, thick, black}
+        ]
+        \begin{scope}[xshift=0cm]
+            \node[node] (s0) at (0,0) {5};
+            \node[node] (s1) at (90:1.5) {1};
+            \node[node] (s2) at (162:1.5) {1};
+            \node[node] (s3) at (18:1.5) {1};
+            \node[node] (s4) at (234:1.5) {1};
+            \node[node] (s5) at (306:1.5) {1};
+            
+            \draw[edge] (s0) -- (s1);
+            \draw[edge] (s0) -- (s2);
+            \draw[edge] (s0) -- (s3);
+            \draw[edge] (s0) -- (s4);
+            \draw[edge] (s0) -- (s5);
+        \end{scope}
+        \end{tikzpicture}
+        \caption{Star topology, $\mathscr{S}=1.0$}
+    \end{figure}
+\end{frame}
+\begin{frame}{Resilience Metrics: Six Criteria of Sparsity~\cite{sparsity}}
+    \begin{enumerate}
+        \item Robin Hood: Stealing from the rich and giving to the poor decreases sparsity
+        \item \textbf{Scaling}: multiplying all values by a constant does not change sparsity
+        \item Rising Tide: Adding a constant to all values decreases sparsity
+        \item Cloning: Cloning the vector does not change sparsity
+        \item Bill Gates: Adding a large value to the vector increases sparsity
+        \item Babies: Adding a zero to the vector increases sparsity
+    \end{enumerate}
+\end{frame}
+
+\begin{frame}{Resilience Metrics: the $\mathscr{S}$-Score Sensitivity}
+    \begin{itemize}
+        % \item High sensitivity to concentration through maximally centralized topology: detect SPOF
+        \item $\mathscr{S}$-Score does not satisfy \textbf{Scaling} axiom
+    \end{itemize}
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \begin{figure}
+        \begin{tikzpicture}[scale=0.8]
+            \node[circle, draw] (1) at (-0.866,0.5) {2};
+            \node[circle, draw] (2) at (0.866,0.5) {2};
+            \node[circle, draw] (3) at (0.866,-0.5) {2};
+            \node[circle, draw] (4) at (-0.866,-0.5) {2};
+            
+            \draw (1) -- (2) -- (3) -- (4) -- (1);
+        \end{tikzpicture}
+        \caption{Topology $[2,2,2,2]$ with $\mathscr{S}=0.75$}
+        \end{figure}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \begin{figure}
+        \begin{tikzpicture}[scale=0.8]
+            \node[circle, draw] (1) at (-0.866,0.5) {1};
+            \node[circle, draw] (2) at (0.866,0.5) {1};
+            \node[circle, draw] (3) at (0.866,-0.5) {1};
+            \node[circle, draw] (4) at (-0.866,-0.5) {1};
+            
+            \draw (1) -- (2);
+            \draw (3) -- (4);
+        \end{tikzpicture}
+        \caption{Topology [1,1,1,1] with $\mathscr{S}=0.5$}
+        \end{figure}
+    \end{minipage}
+\end{frame}
+
+\begin{frame}{Resilience Metrics: the Gini Coefficient}
+    \begin{itemize}
+        \item Popular metric used to compare wealth distributions of populations 
+        \item Measures inequality of node degrees in a topology
+    %     \item Defined as:
+    % \[
+    %     G = \frac{\sum_{i=1}^n \sum_{j=1}^i (\left|a_i - a_j\right|)}{2 n ^ 2 \bar{x}}
+    % \]
+    % where $x_i$,$x_j$ are the individual vector elements, $n$ is the number of elements, and $\bar{x}$ is the mean of the vector \pause
+    % \item Gini coefficient of both topologies is the same: $0$ \pause
+    \end{itemize}
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \begin{figure}
+        \begin{tikzpicture}[scale=0.8]
+            \node[circle, draw] (1) at (-0.866,0.5) {2};
+            \node[circle, draw] (2) at (0.866,0.5) {2};
+            \node[circle, draw] (3) at (0.866,-0.5) {2};
+            \node[circle, draw] (4) at (-0.866,-0.5) {2};
+            
+            \draw (1) -- (2) -- (3) -- (4) -- (1);
+        \end{tikzpicture}
+        \caption{Topology $[2,2,2,2]$ with $G=0$}
+        \end{figure}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \begin{figure}
+        \begin{tikzpicture}[scale=0.8]
+            \node[circle, draw] (1) at (-0.866,0.5) {1};
+            \node[circle, draw] (2) at (0.866,0.5) {1};
+            \node[circle, draw] (3) at (0.866,-0.5) {1};
+            \node[circle, draw] (4) at (-0.866,-0.5) {1};
+            
+            \draw (1) -- (2);
+            \draw (3) -- (4);
+        \end{tikzpicture}
+        \caption{Topology [1,1,1,1] with $G=0$}
+        \end{figure}
+    \end{minipage}
+    
+    % TODO: the calculation of the S Score here is wrong: it should be 1.0 really fast
+    % \begin{minipage}{0.45\textwidth}
+    %     \centering
+    %     \includegraphics[width=\textwidth]{figures/centralization_sparse.png}
+    %     \captionof{figure}{Sparse topology}
+    % \end{minipage}
+    % \hfill
+    % \begin{minipage}{0.45\textwidth}
+    %     \centering
+    %     \includegraphics[width=\textwidth]{figures/centralization_redistribution.png}
+    %     \captionof{figure}{Dense topology}
+    % \end{minipage}
+\end{frame}

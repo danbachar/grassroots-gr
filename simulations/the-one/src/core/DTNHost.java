@@ -548,4 +548,12 @@ public class DTNHost implements Comparable<DTNHost> {
 		return this.movement;
 	}
 
+	/**
+	 * Purge the router of all messages pertaining to a specific DTNHost pair
+	 * @param to DTNHost to purge messages to
+	 */
+	public void purgeMessageBuffer(DTNHost to) {
+		this.router.purge(this, to);
+	}
+
 }

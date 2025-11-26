@@ -4,6 +4,7 @@
  */
 package core;
 
+import input.StaticHostMessageGenerator;
 import routing.MessageRouter;
 
 /**
