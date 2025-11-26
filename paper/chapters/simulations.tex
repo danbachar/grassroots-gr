@@ -41,13 +41,13 @@ It is evident that the intra-cluster communication mode had a generally higher o
     \label{fig:message-distance-distribution}
 \end{figure}
 
-To better understand the topology, figure \ref{fig:topology-matrix-100m-5} shows the distance matrix between hosts to the left, supplemented by two topological matrices, one for each communication mode.
+To better understand the topology, figure \ref{fig:topology-matrix-90m-5} shows the distance matrix between hosts to the left, supplemented by two topological matrices, one for each communication mode.
 The topological matrices have a black cell at position $(i, j)$ if host $i$ is connected to host $j$.
 Next, randomized topologies were created for each configuration, to assess how the maximum node degree affects the message latency, centralization, and sparsity metrics of unstructured p2p networks.
 This was done to evaluate how different topologies with the same communication radius and maximum node degree induce variance in the different metrics 
 \begin{figure}[hbp]
     \centering
-    \includegraphics[width=0.5\textwidth]{figures/range100_maxdeg5_topology_distance.png}
-    \caption{Topology and distance metrices for communication radius 100m, constrained maximum node degree 5}
-    \label{fig:topology-matrix-100m-5}
+    \includegraphics[width=0.5\textwidth]{figures/range90_maxdeg5_topology_distance.png}
+    \caption{Topology and distance metrices for communication radius 90m, constrained maximum node degree 5}
+    \label{fig:topology-matrix-90m-5}
 \end{figure}

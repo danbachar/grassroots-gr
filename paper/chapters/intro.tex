@@ -36,9 +36,9 @@ While the left plot simply shows the distribution of values, the right plot comp
     \label{fig:centralization-redistribution}
 \end{figure}
 An increasingly dense topology can be observed in figure~\ref{fig:centralization-redistribution}, that illustrates the change in resilience metrics as the topology becomes equally distributed.
-The value at the start of this plot represents an extremely unequal distribution, where one node dominates all resources (i.e. network links), and as the plot progresses on the X axis, the topology gradually reaches a state of perfect equilibrium where all nodes are equally connected.
+The value at the start of this plot represents an extremely unequal distribution, where one node dominates all network links, and as the plot progresses on the X axis, the topology gradually reaches a state of perfect equilibrium where all nodes are equally connected.
 It is noteworthy to observe that the Gini coefficient at the end of this plot reaches a minimum value of 0, indicating perfect equality, where the $\mathscr{S}$ score does not: this is because the Gini coefficient is calculated by computing the difference in individual concentration of value in the network, and when all those differences are zero, the Gini coefficient also reaches zero.
-This is because the Gini measurement focuses on the \textbf{overall} inequality distribution, where the $\mathscr{S}$ score focuses on the \textbf{top} dominant values, which makes it inherently sensitive to outliers.
+The Gini measurement focuses on the \textbf{overall} inequality distribution, where the $\mathscr{S}$ score focuses on the \textbf{top} dominant values, which makes it inherently sensitive to outliers.
 
 In this research paper, we focus on the problem of designing resilient unstructured p2p overlay networks using BLE. To do that, we conducted an experiment using modern devices to collect real-world empirical data on the stochastics of the BLE signal propagation over different distances, and use the collected empirical evidence to parameterize simulations of unstructured p2p networks.
 We measure the resilience~\cite{sparsity,dependence}, and theoretical channel capacity of those simulated networks, and rationalize about the design of resilient local p2p overlay networks using our sparsity metrics.

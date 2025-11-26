@@ -2,8 +2,8 @@
 \begin{frame}{Resilience Metrics}
     \begin{itemize}
         % \item Building resilient partially-offline p2p networks requires a paradigm shift: IP packet forwarding vs. Store-Carry-Forward
-        \item Distributed resilience as overall similar number of links in topology%: prevent centralization, single points of failure
-        \item Compare different metrics: $L_0$ norm, $\mathscr{S}$-Score, Gini
+        \item Distributed resilience in communication, not resources: overall similar node degrees in topology%: prevent centralization, single points of failure
+        \item Compare different metrics: $L_0$ norm, $\mathscr{S}$-Score~\cite{dependence}, Gini~\cite{sparsity}
     \end{itemize}
 
     \begin{figure}[H]
@@ -31,29 +31,10 @@
     \end{figure}
 \end{frame}
 
-% \begin{frame}{Resilience Metrics: the $L_0$ Norm}
-%     \begin{itemize}
-%         \item Number of nodes with peer degree $> 0$ in a given topology
-%         \item Measures the percentage of non-isolated nodes in a network
-%         \item Enough to measure resilience?
-%     \end{itemize}
-    
-% \end{frame}
 \begin{frame}{Resilience Metrics: the $\mathscr{S}$-Score}
     \begin{itemize}
         \item Metric coming from US antitrust laws to measure market concentration
         \item Measures similarity to maximally centralized topology
-        % \item Good, but...
-    %     \item Defined as:
-    % \end{itemize}
-    % \[
-    % \mathscr{S} = \sum_{i=0}^n {(\frac{a_i}{C})}^2 - \frac{1}{C}
-    % \]
-    % where:
-    % \begin{itemize}
-    %     \item $\mathbf{a}$ vector of node degrees
-    %     \item $\mathbf{n}$ total number of nodes
-    %     \item $\mathbf{C}$ total number of edges
     \end{itemize}
     \begin{figure}[H]
         \centering
@@ -79,7 +60,7 @@
         \caption{Star topology, $\mathscr{S}=1.0$}
     \end{figure}
 \end{frame}
-\begin{frame}{Resilience Metrics: Six Criteria of Sparsity}
+\begin{frame}{Resilience Metrics: Six Criteria of Sparsity~\cite{sparsity}}
     \begin{enumerate}
         \item Robin Hood: Stealing from the rich and giving to the poor decreases sparsity
         \item \textbf{Scaling}: multiplying all values by a constant does not change sparsity
@@ -92,7 +73,7 @@
 
 \begin{frame}{Resilience Metrics: the $\mathscr{S}$-Score Sensitivity}
     \begin{itemize}
-        \item High sensitivity to concentration through maximally centralized topology: detect SPOF
+        % \item High sensitivity to concentration through maximally centralized topology: detect SPOF
         \item $\mathscr{S}$-Score does not satisfy \textbf{Scaling} axiom
     \end{itemize}
     \begin{minipage}{0.45\textwidth}

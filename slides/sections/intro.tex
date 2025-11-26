@@ -1,14 +1,4 @@
 \section{Introduction}
-% \begin{frame}{Motivation}
-%     \includegraphics[width=\textwidth]{pics/internet.pdf}
-% \end{frame}
-% \begin{frame}{Motivation}
-%     \includegraphics[width=\textwidth]{pics/monitoring.pdf}
-% \end{frame}
-
-% \begin{frame}{Motivation}
-%     \includegraphics[width=\textwidth]{pics/failure.pdf}
-% \end{frame}
 \begin{frame}{Motivation}
     Provide resilient distributed communication during Internet shutdowns in case of disasters% or political unrest %(Gaza war, political control in Palestine)
 \end{frame}
@@ -25,31 +15,20 @@
         \end{figure}
     \end{minipage}
 \end{frame}
-% \begin{frame}{Motivation}
-%     \begin{itemize}
-%         \item Centralization brought issues that are worsened by disasters, oppressive regimes
-%         \item War makes internet infrastructure targets for distruption and control
-%         % \item Unstable political systems make use of Internet surveillance to oppress civic organizers
-%     \end{itemize}
-% \end{frame}
-
-% \begin{frame}{Use Case}
-%     Provide resilient way to communicate during Internet shutdowns in case of disasters or political unrest (Gaza war, political control in Palestine)
-% \end{frame}
 
 \begin{frame}{Solution Approach}
-    To solve fragile consolidation of power, resilient decentralization is key!
+    Towards addressing fragile consolidation of power, resilient decentralization is key!
     \begin{itemize}
         \item Providing connectivity without infrastructure: p2p networks
         \begin{itemize}
-            \item Structured: Kademlia, BitTorrent, more recently DLT: ETH, Bitcoin, Ripple XRP, etc
-            \item \textbf{Unstructured}: FireChat, Twimight, Briar, bitchat, Amigo
+            \item Structured: Kademlia~\cite{kademlia}, Chord~\cite{chord}, more recently DLT~\cite{comms-cost}: ETH~\cite{guzman24}, Bitcoin~\cite{bitcoin}, Ripple XRP~\cite{guzman22}, etc
+            \item \textbf{Unstructured}: FireChat~\cite{firechat}, Twimight~\cite{twimight}, Briar~\cite{briar}, bitchat~\cite{bitchat}, Amigo~\cite{amigo}
         \end{itemize}
     \end{itemize}
     To enable sustainable critical communication for all: use efficient ubiquitous p2p protocols
     \begin{itemize}
         \item \textbf{BLE}
-        \item Others: WiFi-Direct, Zigbee, LoRA and others
+        \item Others: WiFi-Direct, Zigbee, LoRA~\cite{wifi-ble-power}
     \end{itemize}
 \end{frame}
 
@@ -57,6 +36,4 @@
     \textbf{Research Question} How to provide resilient decentralized communication over unstructured p2p networks using efficient p2p communication protocols in the presence of network disruptions?
 
     \textbf{Approach} Collect empirical data to parameterize signal, simulate distributed network topologies, measure resilience w.r.t centralization metrics
-
-    % \textbf{Contribution} Provide the design space for resilient unstructured p2p networks
 \end{frame}
