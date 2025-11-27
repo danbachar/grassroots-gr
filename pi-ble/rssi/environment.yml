@@ -1,0 +1,4 @@
+name: pi-ble
+channels:
+  - defaults
+prefix: /opt/miniconda3/envs/pi-ble
