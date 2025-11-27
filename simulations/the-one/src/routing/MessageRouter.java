@@ -18,7 +18,7 @@ import core.SimClock;
 import core.SimError;
 import routing.util.RoutingInfo;
 import util.Tuple;
-
+import input.StaticHostMessageGenerator;
 /**
  * Superclass for message routers.
  */
