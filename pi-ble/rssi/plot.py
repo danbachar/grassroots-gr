@@ -1,12 +1,11 @@
-# python plot.py --input-dir ./ranges --output-dir ./plots
 #!/usr/bin/env python3
+# python plot.py --input-dir ./ranges --output-dir ./plots
 from pathlib import Path
 from os import listdir, makedirs
 from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 from collections import defaultdict
-import time
 import re
 
 def parse_summary_file(filepath: Path) -> dict[int, tuple[float, float]]:
@@ -88,9 +87,10 @@ def plot_rssi_vs_distance(distance_rssi_data: dict[float, list[float]], output_d
     plt.legend()
     
     plt.tight_layout()
-    plt.savefig(f'{output_dir}/rssi_vs_distance.png', dpi=300, bbox_inches='tight')
+    fpath=f'{output_dir}/rssi_vs_distance.png'
+    plt.savefig(fpath, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"\nSaved RSSI vs distance plot to {output_dir}/rssi_vs_distance.png")
+    print(f"\nSaved RSSI vs distance plot to {fpath}")
 
 def plot_density(distance_rssi_data: dict[float, list[float]], output_dir: str, bin_size: int = 30, ranges_to_plot: Optional[list[float]]=None):
     """Plot probability density of RSSI values for each distance in separate subplots
@@ -183,14 +183,15 @@ def plot_cdf(distance_rssi_data: dict[float, list[float]], output_dir: str):
                     marker=markers[i % len(markers)], markersize=4, markevery=max(1, len(sorted_rssi)//20), 
                     linewidth=2, where='post')
     
-    plt.xlabel('RSSI (dBm)')
-    plt.ylabel('Cumulative Probability')
+    plt.xlabel('RSSI (dBm)', fontsize=18)
+    plt.ylabel('Cumulative Probability', fontsize=18)
     plt.grid(True, alpha=0.3)
-    plt.legend()
+    plt.legend(loc="lower right", fontsize=18)
     plt.tight_layout()
-    plt.savefig(f'{output_dir}/rssi_cdf.png', dpi=300, bbox_inches='tight')
+    fpath=f'{output_dir}/rssi_cdf.png'
+    plt.savefig(fpath, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"Saved CDF plot to {output_dir}/rssi_cdf.png")
+    print(f"Saved CDF plot to {fpath}")
 
 def plot_rssi_vs_time(distance_time_rssi_data: dict[float, dict[float, list[float]]], output_dir: str):
     """Plot RSSI vs time for each distance with one line per distance"""
@@ -526,23 +527,16 @@ def parse_arguments():
     parser.add_argument("--output-dir", type=str, default="./plots", help="Directory to save plots")
     return parser.parse_args()
 
-def main():
-    args = parse_arguments()
-    ranges: list[str] = list(listdir(args.input_dir))
-    makedirs(args.output_dir, exist_ok=True)
-
+def process_data(input_dir: Path, ranges: list[str]):
     distance_rssi_data: dict[float, list[float]] = {}
     distance_time_rssi_data: dict[float, dict[float, list[float]]] = defaultdict(lambda: defaultdict(list))
     distance_run_timestamps: dict[float, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list)) # Map distance to run to timestamp differences
-
-    print(f"Processing data from summary files")
-    print("=" * 80)
 
     for range_dir in ranges:
         distance = float(range_dir)
         distance_rssi_data[distance] = []
 
-        path_to_range_directory = Path(args.input_dir) / range_dir
+        path_to_range_directory = input_dir / range_dir
         
         # Read summary file to get run timestamps
         summary_file = path_to_range_directory / "rssi_log.csv_summary.csv"
@@ -608,8 +602,14 @@ def main():
                 run_duration_s = run_duration_ms / 1000
                 print(f"Distance {distance:6.1f}m, Run {run_idx:2d}: kept {valid_samples_count:5d} samples, skipped {skipped_samples_count:5d} samples (outside {run_duration_s:.0f}s window)")
 
-    print("=" * 80)
-    print("Data processing complete.\n")
+    return distance_rssi_data, distance_time_rssi_data, distance_run_timestamps
+
+def main():
+    args = parse_arguments()
+    ranges: list[str] = list(listdir(args.input_dir))
+    makedirs(args.output_dir, exist_ok=True)
+
+    distance_rssi_data, distance_time_rssi_data, distance_run_timestamps = process_data(Path(args.input_dir), ranges)
 
     plot_rssi_vs_distance(distance_rssi_data, args.output_dir)
     plot_density(distance_rssi_data, args.output_dir, 30)
@@ -618,14 +618,6 @@ def main():
     plot_timestamp_diff_vs_time(distance_time_rssi_data, args.output_dir)
     plot_advertisements_per_distance(distance_rssi_data, distance_run_timestamps, args.output_dir)
     print_run_durations(distance_run_timestamps)
-    print("\nSummary Statistics:")
-    print("Distance (m)\tMean RSSI (dBm)\tStd Dev\tNum Samples")
-    print("-" * 60)
-    for distance in sorted(distance_rssi_data.keys()):
-        rssi_values = distance_rssi_data[distance]
-        if rssi_values:
-            print(f"{distance:8.1f}\t{np.mean(rssi_values):12.2f}\t{np.std(rssi_values):7.2f}\t{len(rssi_values):10d}")
-
     print_timestamp_diff_overview(distance_run_timestamps)
 
 if __name__ == "__main__":
